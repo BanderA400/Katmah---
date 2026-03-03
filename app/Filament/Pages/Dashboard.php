@@ -30,6 +30,13 @@ class Dashboard extends Page
 
     public array $partialPages = [];
 
+    public string $calendarMonth = '';
+
+    public function mount(): void
+    {
+        $this->calendarMonth = now()->startOfMonth()->toDateString();
+    }
+
     /**
      * بيانات الويدجتات
      */
@@ -52,6 +59,11 @@ class Dashboard extends Page
         // نسبة الالتزام
         $commitmentRate = $this->calculateCommitmentRate($userId);
 
+        $nearestEndDateModel = $activeKhatmas
+            ->filter(fn (Khatma $khatma): bool => $khatma->expected_end_date !== null)
+            ->sortBy(fn (Khatma $khatma) => $khatma->expected_end_date?->toDateString())
+            ->first();
+
         return [
             'total_completed' => $totalCompleted,
             'total_remaining' => $totalRemaining,
@@ -59,6 +71,8 @@ class Dashboard extends Page
             'streak' => $streak,
             'commitment_rate' => $commitmentRate,
             'active_count' => $activeKhatmas->count(),
+            'nearest_end_date' => $nearestEndDateModel?->expected_end_date?->translatedFormat('j F Y') ?? '—',
+            'nearest_end_date_iso' => $nearestEndDateModel?->expected_end_date?->toDateString(),
         ];
     }
 
@@ -140,6 +154,153 @@ class Dashboard extends Page
         ])->all();
     }
 
+    public function previousCalendarMonth(): void
+    {
+        $this->calendarMonth = Carbon::parse($this->calendarMonth)
+            ->startOfMonth()
+            ->subMonth()
+            ->toDateString();
+    }
+
+    public function nextCalendarMonth(): void
+    {
+        $this->calendarMonth = Carbon::parse($this->calendarMonth)
+            ->startOfMonth()
+            ->addMonth()
+            ->toDateString();
+    }
+
+    public function getMonthlyCommitmentCalendar(): array
+    {
+        $monthStart = Carbon::parse($this->calendarMonth)->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $gridStart = $monthStart->copy()->startOfWeek(Carbon::SUNDAY);
+        $gridEnd = $monthEnd->copy()->endOfWeek(Carbon::SATURDAY);
+        $today = Carbon::today();
+        $userId = (int) auth()->id();
+
+        $completedDates = DailyRecord::query()
+            ->where('user_id', $userId)
+            ->where('is_completed', true)
+            ->whereDate('date', '>=', $gridStart)
+            ->whereDate('date', '<=', $gridEnd)
+            ->distinct()
+            ->pluck('date')
+            ->mapWithKeys(fn ($date): array => [Carbon::parse($date)->toDateString() => true]);
+
+        $firstPlanDateRaw = Khatma::query()
+            ->where('user_id', $userId)
+            ->min('start_date');
+        $firstPlanDate = $firstPlanDateRaw ? Carbon::parse($firstPlanDateRaw)->startOfDay() : null;
+
+        $weeks = [];
+        $currentWeek = [];
+        $doneDays = 0;
+        $missedDays = 0;
+        $cursor = $gridStart->copy();
+
+        while ($cursor->lte($gridEnd)) {
+            $inMonth = $cursor->month === $monthStart->month && $cursor->year === $monthStart->year;
+            $dateKey = $cursor->toDateString();
+
+            $status = 'outside';
+
+            if ($inMonth) {
+                if (! $firstPlanDate) {
+                    $status = $cursor->gt($today) ? 'future' : 'inactive';
+                } elseif ($cursor->lt($firstPlanDate)) {
+                    $status = 'inactive';
+                } elseif ($cursor->gt($today)) {
+                    $status = 'future';
+                } elseif (isset($completedDates[$dateKey])) {
+                    $status = 'done';
+                    $doneDays++;
+                } else {
+                    $status = 'missed';
+                    $missedDays++;
+                }
+            }
+
+            $currentWeek[] = [
+                'day' => $cursor->day,
+                'date' => $dateKey,
+                'status' => $status,
+                'is_today' => $cursor->isSameDay($today),
+                'in_month' => $inMonth,
+            ];
+
+            if (count($currentWeek) === 7) {
+                $weeks[] = $currentWeek;
+                $currentWeek = [];
+            }
+
+            $cursor->addDay();
+        }
+
+        $trackedDays = $doneDays + $missedDays;
+        $monthCommitment = $trackedDays > 0 ? round(($doneDays / $trackedDays) * 100, 1) : 0;
+
+        return [
+            'month_label' => $monthStart->translatedFormat('F Y'),
+            'weekdays' => ['أحد', 'إثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'],
+            'weeks' => $weeks,
+            'done_days' => $doneDays,
+            'missed_days' => $missedDays,
+            'month_commitment' => $monthCommitment,
+        ];
+    }
+
+    public function getBadgesData(): array
+    {
+        $userId = (int) auth()->id();
+
+        $totalPages = (int) DailyRecord::query()
+            ->where('user_id', $userId)
+            ->where('is_completed', true)
+            ->sum('pages_count');
+
+        $completedKhatmas = (int) Khatma::query()
+            ->where('user_id', $userId)
+            ->where('status', KhatmaStatus::Completed)
+            ->count();
+
+        $activeKhatmas = (int) Khatma::query()
+            ->where('user_id', $userId)
+            ->where('status', KhatmaStatus::Active)
+            ->count();
+
+        $streak = $this->calculateStreak($userId);
+        $commitmentRate = $this->calculateCommitmentRate($userId);
+
+        return [
+            [
+                'title' => 'خطوة البداية',
+                'description' => 'تسجيل أول إنجاز في سجل الختمات',
+                'is_unlocked' => $totalPages >= 1,
+            ],
+            [
+                'title' => 'التزام أسبوع',
+                'description' => 'الحفاظ على 7 أيام متتالية',
+                'is_unlocked' => $streak >= 7,
+            ],
+            [
+                'title' => 'توازن ممتاز',
+                'description' => 'نسبة التزام 70% أو أكثر',
+                'is_unlocked' => $commitmentRate >= 70,
+            ],
+            [
+                'title' => 'خاتم',
+                'description' => 'إكمال ختمة واحدة على الأقل',
+                'is_unlocked' => $completedKhatmas >= 1,
+            ],
+            [
+                'title' => 'إدارة متعددة',
+                'description' => 'تشغيل 3 ختمات نشطة في نفس الوقت',
+                'is_unlocked' => $activeKhatmas >= 3,
+            ],
+        ];
+    }
+
     /**
      * تسجيل كامل ورد اليوم المتبقي
      */
@@ -213,6 +374,80 @@ class Dashboard extends Page
             ->body("تم استئناف ختمة \"{$khatma->name}\"")
             ->success()
             ->send();
+    }
+
+    public function rebalanceKhatma(int $khatmaId): void
+    {
+        $today = Carbon::today();
+
+        $result = DB::transaction(function () use ($khatmaId, $today): array {
+            $khatma = Khatma::query()
+                ->where('id', $khatmaId)
+                ->where('user_id', auth()->id())
+                ->where('status', KhatmaStatus::Active)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $khatma) {
+                return ['type' => 'warning', 'message' => 'الختمة غير متاحة لإعادة الموازنة'];
+            }
+
+            if ($khatma->start_date && $today->lt($khatma->start_date->copy()->startOfDay())) {
+                return ['type' => 'warning', 'message' => 'لا يمكن إعادة الموازنة قبل تاريخ بداية الختمة'];
+            }
+
+            $remainingPages = max((int) $khatma->total_pages - (int) $khatma->completed_pages, 0);
+
+            if ($remainingPages <= 0) {
+                return ['type' => 'warning', 'message' => 'الختمة مكتملة بالفعل'];
+            }
+
+            if ($khatma->planning_method === PlanningMethod::ByDuration) {
+                $endDate = $khatma->expected_end_date?->copy()->startOfDay() ?? $today->copy();
+
+                if ($endDate->lt($today)) {
+                    $endDate = $today->copy();
+                }
+
+                $daysLeft = $today->diffInDays($endDate) + 1;
+                $newDailyPages = max((int) ceil($remainingPages / max($daysLeft, 1)), 1);
+
+                $khatma->update([
+                    'daily_pages' => $newDailyPages,
+                    'expected_end_date' => $endDate,
+                ]);
+
+                return [
+                    'type' => 'success',
+                    'message' => "تمت إعادة الموازنة: {$remainingPages} صفحة على {$daysLeft} يوم.",
+                ];
+            }
+
+            $dailyPages = max((int) $khatma->daily_pages, 1);
+            $daysNeeded = (int) ceil($remainingPages / $dailyPages);
+            $newEndDate = $today->copy()->addDays(max($daysNeeded - 1, 0));
+
+            $khatma->update([
+                'expected_end_date' => $newEndDate,
+            ]);
+
+            return [
+                'type' => 'success',
+                'message' => "تم تحديث تاريخ الختم المتوقع إلى {$newEndDate->translatedFormat('j F Y')}.",
+            ];
+        });
+
+        $notification = Notification::make()
+            ->title($result['type'] === 'success' ? 'تمت إعادة الموازنة' : 'تنبيه')
+            ->body($result['message']);
+
+        if ($result['type'] === 'success') {
+            $notification->success()->send();
+
+            return;
+        }
+
+        $notification->warning()->send();
     }
 
     /**

@@ -194,4 +194,106 @@ class KhatmaCreateRouteTest extends TestCase
 
         $this->assertSame(KhatmaDirection::Forward, $khatma->fresh()->direction);
     }
+
+    public function test_edit_keeps_scope_and_pages_unchanged_when_progress_exists(): void
+    {
+        $user = User::factory()->create();
+
+        $khatma = Khatma::create([
+            'user_id' => $user->id,
+            'name' => 'ختمة نطاق ثابت',
+            'type' => KhatmaType::Review,
+            'scope' => KhatmaScope::Custom,
+            'direction' => KhatmaDirection::Forward,
+            'start_page' => 100,
+            'end_page' => 200,
+            'total_pages' => 101,
+            'planning_method' => PlanningMethod::ByWird,
+            'auto_compensate_missed_days' => false,
+            'daily_pages' => 5,
+            'start_date' => '2026-03-01',
+            'expected_end_date' => '2026-04-30',
+            'status' => \App\Enums\KhatmaStatus::Active,
+            'current_page' => 120,
+            'completed_pages' => 20,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(EditKhatma::class, ['record' => $khatma->getRouteKey()])
+            ->fillForm([
+                'scope' => KhatmaScope::Full,
+                'start_page' => 1,
+                'end_page' => 604,
+            ])
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $fresh = $khatma->fresh();
+
+        $this->assertSame(KhatmaScope::Custom, $fresh->scope);
+        $this->assertSame(100, $fresh->start_page);
+        $this->assertSame(200, $fresh->end_page);
+        $this->assertSame(101, $fresh->total_pages);
+    }
+
+    public function test_create_uses_user_defaults_for_daily_pages_and_compensation(): void
+    {
+        $user = User::factory()->create([
+            'default_daily_pages' => 12,
+            'default_auto_compensate_missed_days' => true,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(CreateKhatma::class)
+            ->fillForm([
+                'name' => 'ختمة بالافتراضيات',
+                'type' => KhatmaType::Tilawa,
+                'scope' => KhatmaScope::Full,
+                'direction' => KhatmaDirection::Forward,
+                'start_page' => 1,
+                'end_page' => 604,
+                'start_date' => '2026-03-01',
+                'planning_method' => PlanningMethod::ByWird,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $khatma = Khatma::query()->firstOrFail();
+
+        $this->assertSame(12, $khatma->daily_pages);
+        $this->assertTrue($khatma->auto_compensate_missed_days);
+    }
+
+    public function test_template_selection_does_not_override_manual_by_wird_choice(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user);
+
+        Livewire::test(CreateKhatma::class)
+            ->fillForm([
+                'name' => 'ختمة بالقالب',
+                'type' => KhatmaType::Review,
+                'scope' => KhatmaScope::Full,
+                'direction' => KhatmaDirection::Forward,
+                'start_page' => 1,
+                'end_page' => 604,
+                'start_date' => '2026-03-01',
+                'planning_method' => PlanningMethod::ByDuration,
+                'expected_end_date' => '2026-03-30',
+                'daily_pages' => 5,
+            ])
+            ->set('data.template_days', '30')
+            ->set('data.planning_method', PlanningMethod::ByWird->value)
+            ->set('data.daily_pages', 5)
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $khatma = Khatma::query()->firstOrFail();
+
+        $this->assertSame(PlanningMethod::ByWird, $khatma->planning_method);
+        $this->assertSame('2026-06-29', $khatma->expected_end_date?->toDateString());
+    }
 }

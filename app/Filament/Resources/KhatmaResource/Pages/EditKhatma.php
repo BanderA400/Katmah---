@@ -31,6 +31,10 @@ class EditKhatma extends EditRecord
     {
         if ((int) ($this->record->completed_pages ?? 0) > 0) {
             $data['direction'] = static::stateValue($this->record->direction);
+            $data['scope'] = static::stateValue($this->record->scope);
+            $data['start_page'] = (int) $this->record->start_page;
+            $data['end_page'] = (int) $this->record->end_page;
+            $data['total_pages'] = (int) $this->record->total_pages;
         }
 
         $startPage = (int) ($data['start_page'] ?? 1);

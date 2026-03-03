@@ -10,11 +10,14 @@ use App\Enums\PlanningMethod;
 use App\Filament\Resources\KhatmaResource\Pages;
 use App\Models\Khatma;
 use App\Models\Surah;
+use App\Support\AppSettings;
 use Carbon\Carbon;
 use Filament\Notifications\Notification;
 use Filament\Forms;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Wizard;
+use Filament\Schemas\Components\Wizard\Step;
 use Filament\Schemas\Schema;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -40,231 +43,286 @@ class KhatmaResource extends Resource
     {
         return $schema
             ->components([
-                Section::make('معلومات الختمة')
-                    ->description('حدد اسم الختمة ونوعها')
-                    ->icon('heroicon-o-book-open')
-                    ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('اسم الختمة')
-                            ->placeholder('مثال: ختمة رمضان')
-                            ->required()
-                            ->maxLength(255),
+                Wizard::make([
+                    Step::make('الخطوة 1: معلومات أساسية')
+                        ->icon('heroicon-o-book-open')
+                        ->description('اسم الختمة، النوع، وموعد البداية')
+                        ->schema([
+                            Section::make('معلومات الختمة')
+                                ->schema([
+                                    Forms\Components\TextInput::make('name')
+                                        ->label('اسم الختمة')
+                                        ->placeholder('مثال: ختمة رمضان')
+                                        ->required()
+                                        ->maxLength(255),
 
-                        Forms\Components\Select::make('type')
-                            ->label('نوع الختمة')
-                            ->options(KhatmaType::class)
-                            ->required()
-                            ->native(false),
+                                    Forms\Components\Select::make('type')
+                                        ->label('نوع الختمة')
+                                        ->options(KhatmaType::class)
+                                        ->required()
+                                        ->native(false),
 
-                        Forms\Components\Select::make('status')
-                            ->label('الحالة')
-                            ->options(KhatmaStatus::class)
-                            ->default(KhatmaStatus::Active->value)
-                            ->required()
-                            ->native(false)
-                            ->visibleOn('edit'),
-                    ])
-                    ->columns(2),
+                                    Forms\Components\Select::make('status')
+                                        ->label('الحالة')
+                                        ->options(KhatmaStatus::class)
+                                        ->default(KhatmaStatus::Active->value)
+                                        ->required()
+                                        ->native(false)
+                                        ->visibleOn('edit'),
 
-                Section::make('نطاق الختمة')
-                    ->description('حدد النطاق والاتجاه')
-                    ->icon('heroicon-o-document-text')
-                    ->schema([
-                        Forms\Components\Select::make('scope')
-                            ->label('النطاق')
-                            ->options(KhatmaScope::class)
-                            ->required()
-                            ->native(false)
-                            ->live()
-                            ->afterStateUpdated(function ($get, $set, $state) {
-                                if (static::stateValue($state) === KhatmaScope::Full->value) {
-                                    $set('start_page', 1);
-                                    $set('end_page', 604);
-                                    $set('total_pages', 604);
-                                    static::recalculate($get, $set);
-                                }
-                            }),
+                                    Forms\Components\DatePicker::make('start_date')
+                                        ->label('تاريخ البداية')
+                                        ->default(now())
+                                        ->required()
+                                        ->native(false)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set): void {
+                                            static::applyTemplatePreset($get, $set);
+                                            static::recalculate($get, $set);
+                                        }),
 
-                        Forms\Components\Select::make('direction')
-                            ->label('الاتجاه')
-                            ->options(KhatmaDirection::class)
-                            ->default(KhatmaDirection::Forward->value)
-                            ->required()
-                            ->disabled(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0)
-                            ->native(false),
+                                    Forms\Components\Select::make('template_days')
+                                        ->label('قالب سريع')
+                                        ->options([
+                                            'manual' => 'يدوي',
+                                            '30' => 'ختمة 30 يوم',
+                                            '60' => 'ختمة 60 يوم',
+                                            '90' => 'ختمة 90 يوم',
+                                        ])
+                                        ->default('manual')
+                                        ->dehydrated(false)
+                                        ->native(false)
+                                        ->live()
+                                        ->helperText('اختيار قالب يضبط طريقة التخطيط إلى "بالمدة" تلقائيًا.')
+                                        ->visibleOn('create')
+                                        ->afterStateUpdated(function ($get, $set): void {
+                                            static::applyTemplatePreset($get, $set);
+                                            static::recalculate($get, $set);
+                                        }),
+                                ])
+                                ->columns(2),
+                        ]),
 
-                        Forms\Components\Select::make('start_surah')
-                            ->label('من سورة')
-                            ->options(fn () => Surah::orderBy('number')->pluck('name_arabic', 'number')->toArray())
-                            ->searchable()
-                            ->native(false)
-                            ->visible(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Custom->value)
-                            ->live()
-                            ->afterStateUpdated(function ($get, $set, $state) {
-                                if ($state) {
-                                    $surah = Surah::where('number', $state)->first();
-                                    if ($surah) {
-                                        $set('start_page', $surah->start_page);
-                                        static::calculateTotalPages($get, $set);
-                                    }
-                                }
-                            }),
+                    Step::make('الخطوة 2: النطاق')
+                        ->icon('heroicon-o-document-text')
+                        ->description('حدد الصفحات أو السور المطلوبة')
+                        ->schema([
+                            Section::make('نطاق الختمة')
+                                ->schema([
+                                    Forms\Components\Select::make('scope')
+                                        ->label('النطاق')
+                                        ->options(KhatmaScope::class)
+                                        ->default(KhatmaScope::Full->value)
+                                        ->required()
+                                        ->disabled(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0)
+                                        ->native(false)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set, $state) {
+                                            if (static::stateValue($state) === KhatmaScope::Full->value) {
+                                                $set('start_page', 1);
+                                                $set('end_page', 604);
+                                                $set('total_pages', 604);
+                                                static::recalculate($get, $set);
+                                            }
+                                        }),
 
-                        Forms\Components\Select::make('end_surah')
-                            ->label('إلى سورة')
-                            ->options(fn () => Surah::orderBy('number')->pluck('name_arabic', 'number')->toArray())
-                            ->searchable()
-                            ->native(false)
-                            ->visible(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Custom->value)
-                            ->live()
-                            ->afterStateUpdated(function ($get, $set, $state) {
-                                if ($state) {
-                                    $surah = Surah::where('number', $state)->first();
-                                    if ($surah) {
-                                        $set('end_page', $surah->end_page);
-                                        static::calculateTotalPages($get, $set);
-                                    }
-                                }
-                            }),
+                                    Forms\Components\Select::make('direction')
+                                        ->label('الاتجاه')
+                                        ->options(KhatmaDirection::class)
+                                        ->default(KhatmaDirection::Forward->value)
+                                        ->required()
+                                        ->disabled(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0)
+                                        ->native(false),
 
-                        Forms\Components\TextInput::make('start_page')
-                            ->label('صفحة البداية')
-                            ->numeric()
-                            ->default(1)
-                            ->minValue(1)
-                            ->maxValue(604)
-                            ->required()
-                            ->lte('end_page')
-                            ->live(debounce: 500)
-                            ->afterStateUpdated(fn ($get, $set) => static::calculateTotalPages($get, $set))
-                            ->disabled(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Full->value),
+                                    Forms\Components\Select::make('start_surah')
+                                        ->label('من سورة')
+                                        ->options(fn () => Surah::orderBy('number')->pluck('name_arabic', 'number')->toArray())
+                                        ->searchable()
+                                        ->disabled(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0)
+                                        ->native(false)
+                                        ->visible(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Custom->value)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set, $state) {
+                                            if ($state) {
+                                                $surah = Surah::where('number', $state)->first();
+                                                if ($surah) {
+                                                    $set('start_page', $surah->start_page);
+                                                    static::calculateTotalPages($get, $set);
+                                                }
+                                            }
+                                        }),
 
-                        Forms\Components\TextInput::make('end_page')
-                            ->label('صفحة النهاية')
-                            ->numeric()
-                            ->default(604)
-                            ->minValue(1)
-                            ->maxValue(604)
-                            ->required()
-                            ->gte('start_page')
-                            ->live(debounce: 500)
-                            ->afterStateUpdated(fn ($get, $set) => static::calculateTotalPages($get, $set))
-                            ->disabled(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Full->value),
+                                    Forms\Components\Select::make('end_surah')
+                                        ->label('إلى سورة')
+                                        ->options(fn () => Surah::orderBy('number')->pluck('name_arabic', 'number')->toArray())
+                                        ->searchable()
+                                        ->disabled(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0)
+                                        ->native(false)
+                                        ->visible(fn ($get) => static::stateValue($get('scope')) === KhatmaScope::Custom->value)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set, $state) {
+                                            if ($state) {
+                                                $surah = Surah::where('number', $state)->first();
+                                                if ($surah) {
+                                                    $set('end_page', $surah->end_page);
+                                                    static::calculateTotalPages($get, $set);
+                                                }
+                                            }
+                                        }),
 
-                        Forms\Components\TextInput::make('total_pages')
-                            ->label('إجمالي الصفحات')
-                            ->numeric()
-                            ->default(604)
-                            ->required()
-                            ->minValue(1)
-                            ->disabled()
-                            ->dehydrated(),
-                    ])
-                    ->columns(2),
+                                    Forms\Components\TextInput::make('start_page')
+                                        ->label('صفحة البداية')
+                                        ->numeric()
+                                        ->default(1)
+                                        ->minValue(1)
+                                        ->maxValue(604)
+                                        ->required()
+                                        ->lte('end_page')
+                                        ->live(debounce: 500)
+                                        ->afterStateUpdated(fn ($get, $set) => static::calculateTotalPages($get, $set))
+                                        ->disabled(fn ($get, ?Khatma $record): bool =>
+                                            static::stateValue($get('scope')) === KhatmaScope::Full->value
+                                            || (int) ($record?->completed_pages ?? 0) > 0
+                                        ),
 
-                Section::make('التخطيط')
-                    ->description('حدد طريقة التخطيط والجدول الزمني')
-                    ->icon('heroicon-o-calendar-days')
-                    ->schema([
-                        Forms\Components\DatePicker::make('start_date')
-                            ->label('تاريخ البداية')
-                            ->default(now())
-                            ->required()
-                            ->native(false)
-                            ->live()
-                            ->afterStateUpdated(fn ($get, $set) => static::recalculate($get, $set)),
+                                    Forms\Components\TextInput::make('end_page')
+                                        ->label('صفحة النهاية')
+                                        ->numeric()
+                                        ->default(604)
+                                        ->minValue(1)
+                                        ->maxValue(604)
+                                        ->required()
+                                        ->gte('start_page')
+                                        ->live(debounce: 500)
+                                        ->afterStateUpdated(fn ($get, $set) => static::calculateTotalPages($get, $set))
+                                        ->disabled(fn ($get, ?Khatma $record): bool =>
+                                            static::stateValue($get('scope')) === KhatmaScope::Full->value
+                                            || (int) ($record?->completed_pages ?? 0) > 0
+                                        ),
 
-                        Forms\Components\Select::make('planning_method')
-                            ->label('طريقة التخطيط')
-                            ->options(PlanningMethod::class)
-                            ->required()
-                            ->native(false)
-                            ->live()
-                            ->afterStateUpdated(function ($get, $set, $state) {
-                                // مسح القيم عند تغيير الطريقة
-                                if (static::stateValue($state) === PlanningMethod::ByDuration->value) {
-                                    $set('daily_pages', null);
-                                } else {
-                                    $set('expected_end_date', null);
-                                }
-                            }),
+                                    Forms\Components\TextInput::make('total_pages')
+                                        ->label('إجمالي الصفحات')
+                                        ->numeric()
+                                        ->default(604)
+                                        ->required()
+                                        ->minValue(1)
+                                        ->disabled()
+                                        ->dehydrated(),
 
-                        Forms\Components\Toggle::make('auto_compensate_missed_days')
-                            ->label('تعويض تلقائي عند فوات الأيام')
-                            ->helperText('عند التفعيل: يعاد توزيع المتبقي تلقائيًا على الأيام القادمة.')
-                            ->default(false)
-                            ->inline(false),
+                                    Forms\Components\Placeholder::make('progress_lock_notice')
+                                        ->hiddenLabel()
+                                        ->content('بعد بدء التقدم، يتم قفل الاتجاه والنطاق والبداية/النهاية لحماية سلامة التقدم.')
+                                        ->visible(fn (?Khatma $record): bool => (int) ($record?->completed_pages ?? 0) > 0),
+                                ])
+                                ->columns(2),
+                        ]),
 
-                        // === بالمدة: المستخدم يحدد تاريخ الختم ===
-                        Forms\Components\DatePicker::make('expected_end_date')
-                            ->label('تاريخ الختم المتوقع')
-                            ->native(false)
-                            ->minDate(fn ($get) => $get('start_date'))
-                            ->required(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value)
-                            ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value)
-                            ->live()
-                            ->afterStateUpdated(function ($get, $set) {
-                                if (static::stateValue($get('planning_method')) !== PlanningMethod::ByDuration->value) {
-                                    return;
-                                }
+                    Step::make('الخطوة 3: التخطيط')
+                        ->icon('heroicon-o-calendar-days')
+                        ->description('طريقة توزيع الورد اليومي')
+                        ->schema([
+                            Section::make('التخطيط')
+                                ->schema([
+                                    Forms\Components\Select::make('planning_method')
+                                        ->label('طريقة التخطيط')
+                                        ->options(PlanningMethod::class)
+                                        ->default(PlanningMethod::ByWird->value)
+                                        ->required()
+                                        ->native(false)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set, $state) {
+                                            if (static::stateValue($state) === PlanningMethod::ByDuration->value) {
+                                                $set('daily_pages', null);
+                                            } else {
+                                                $set('expected_end_date', null);
+                                            }
+                                        }),
 
-                                // حساب الورد اليومي = الصفحات ÷ الأيام
-                                $startDate = $get('start_date');
-                                $endDate = $get('expected_end_date');
-                                $totalPages = (int) $get('total_pages');
+                                    Forms\Components\Toggle::make('auto_compensate_missed_days')
+                                        ->label('تعويض تلقائي عند فوات الأيام')
+                                        ->helperText('عند التفعيل: يعاد توزيع المتبقي تلقائيًا على الأيام القادمة.')
+                                        ->default(fn (): bool => static::defaultCompensationForUser())
+                                        ->inline(false),
 
-                                if ($startDate && $endDate && $totalPages > 0) {
-                                    $days = static::calculateInclusiveDays($startDate, $endDate);
+                                    Forms\Components\DatePicker::make('expected_end_date')
+                                        ->label('تاريخ الختم المتوقع')
+                                        ->native(false)
+                                        ->minDate(fn ($get) => $get('start_date'))
+                                        ->required(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value)
+                                        ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value)
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set) {
+                                            if (static::stateValue($get('planning_method')) !== PlanningMethod::ByDuration->value) {
+                                                return;
+                                            }
 
-                                    if ($days !== null) {
-                                        $set('daily_pages', (int) ceil($totalPages / $days));
-                                    }
-                                }
-                            }),
+                                            $startDate = $get('start_date');
+                                            $endDate = $get('expected_end_date');
+                                            $totalPages = (int) $get('total_pages');
 
-                        // === بالورد: المستخدم يحدد عدد الصفحات يومياً ===
-                        Forms\Components\TextInput::make('daily_pages')
-                            ->label('الورد اليومي (عدد الصفحات)')
-                            ->numeric()
-                            ->minValue(1)
-                            ->maxValue(604)
-                            ->required(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value)
-                            ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value)
-                            ->live(debounce: 500)
-                            ->afterStateUpdated(function ($get, $set) {
-                                if (static::stateValue($get('planning_method')) !== PlanningMethod::ByWird->value) {
-                                    return;
-                                }
+                                            if ($startDate && $endDate && $totalPages > 0) {
+                                                $days = static::calculateInclusiveDays($startDate, $endDate);
 
-                                // حساب تاريخ الختم = البداية + (الصفحات ÷ الورد)
-                                $startDate = $get('start_date');
-                                $dailyPages = (int) $get('daily_pages');
-                                $totalPages = (int) $get('total_pages');
+                                                if ($days !== null) {
+                                                    $set('daily_pages', (int) ceil($totalPages / $days));
+                                                }
+                                            }
+                                        }),
 
-                                if ($startDate && $dailyPages > 0 && $totalPages > 0) {
-                                    $days = (int) ceil($totalPages / $dailyPages);
-                                    $set('expected_end_date', Carbon::parse($startDate)->addDays(max($days - 1, 0))->format('Y-m-d'));
-                                }
-                            }),
+                                    Forms\Components\TextInput::make('daily_pages')
+                                        ->label('الورد اليومي (عدد الصفحات)')
+                                        ->numeric()
+                                        ->default(fn (): int => static::defaultDailyPagesForUser())
+                                        ->minValue(1)
+                                        ->maxValue(604)
+                                        ->required(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value)
+                                        ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value)
+                                        ->live(debounce: 500)
+                                        ->afterStateUpdated(function ($get, $set) {
+                                            if (static::stateValue($get('planning_method')) !== PlanningMethod::ByWird->value) {
+                                                return;
+                                            }
 
-                        // === الحقول المحسوبة (للعرض) ===
-                        Forms\Components\Placeholder::make('calculated_daily')
-                            ->label('📖 الورد اليومي المحسوب')
-                            ->content(function ($get) {
-                                $daily = $get('daily_pages');
-                                return $daily ? "{$daily} صفحة يومياً" : '—';
-                            })
-                            ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value),
+                                            $startDate = $get('start_date');
+                                            $dailyPages = (int) $get('daily_pages');
+                                            $totalPages = (int) $get('total_pages');
 
-                        Forms\Components\Placeholder::make('calculated_end')
-                            ->label('📅 تاريخ الختم المحسوب')
-                            ->content(function ($get) {
-                                $date = $get('expected_end_date');
-                                return $date ? \Carbon\Carbon::parse($date)->translatedFormat('j F Y') : '—';
-                            })
-                            ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value),
-                    ])
-                    ->columns(2),
+                                            if ($startDate && $dailyPages > 0 && $totalPages > 0) {
+                                                $days = (int) ceil($totalPages / $dailyPages);
+                                                $set('expected_end_date', Carbon::parse($startDate)->addDays(max($days - 1, 0))->format('Y-m-d'));
+                                            }
+                                        }),
+
+                                    Forms\Components\Placeholder::make('calculated_daily')
+                                        ->label('📖 الورد اليومي المحسوب')
+                                        ->content(function ($get) {
+                                            $startDate = $get('start_date');
+                                            $endDate = $get('expected_end_date');
+                                            $totalPages = (int) $get('total_pages');
+
+                                            $summary = static::buildDurationDailySummary(
+                                                is_string($startDate) ? $startDate : null,
+                                                is_string($endDate) ? $endDate : null,
+                                                $totalPages,
+                                            );
+
+                                            return $summary ?? '—';
+                                        })
+                                        ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value),
+
+                                    Forms\Components\Placeholder::make('calculated_end')
+                                        ->label('📅 تاريخ الختم المحسوب')
+                                        ->content(function ($get) {
+                                            $date = $get('expected_end_date');
+
+                                            return $date ? Carbon::parse($date)->translatedFormat('j F Y') : '—';
+                                        })
+                                        ->visible(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByWird->value),
+                                ])
+                                ->columns(2),
+                        ]),
+                ])
+                    ->columnSpanFull(),
 
                 // حقول مخفية
                 Forms\Components\Hidden::make('user_id')
@@ -304,7 +362,19 @@ class KhatmaResource extends Resource
 
                 Tables\Columns\TextColumn::make('daily_pages')
                     ->label('الورد اليومي')
-                    ->suffix(' صفحة')
+                    ->formatStateUsing(function (Khatma $record): string {
+                        if ($record->planning_method === PlanningMethod::ByDuration) {
+                            $summary = static::buildDurationDailySummary(
+                                $record->start_date?->toDateString(),
+                                $record->expected_end_date?->toDateString(),
+                                (int) $record->total_pages,
+                            );
+
+                            return $summary ?? 'متغير';
+                        }
+
+                        return "{$record->daily_pages} صفحة";
+                    })
                     ->alignCenter(),
 
                 Tables\Columns\ViewColumn::make('progress')
@@ -338,6 +408,63 @@ class KhatmaResource extends Resource
                     ->options(KhatmaStatus::class),
             ])
             ->actions([
+                \Filament\Actions\Action::make('rebalance_plan')
+                    ->label('إعادة موازنة')
+                    ->icon('heroicon-o-arrow-path-rounded-square')
+                    ->color('primary')
+                    ->visible(fn (Khatma $record): bool => $record->status === KhatmaStatus::Active)
+                    ->action(function (Khatma $record): void {
+                        $today = Carbon::today();
+                        $remainingPages = max((int) $record->total_pages - (int) $record->completed_pages, 0);
+
+                        if ($remainingPages <= 0) {
+                            Notification::make()
+                                ->title('لا يوجد متبقٍ')
+                                ->body('هذه الختمة مكتملة بالفعل.')
+                                ->warning()
+                                ->send();
+
+                            return;
+                        }
+
+                        if ($record->planning_method === PlanningMethod::ByDuration) {
+                            $endDate = $record->expected_end_date?->copy()->startOfDay() ?? $today->copy();
+
+                            if ($endDate->lt($today)) {
+                                $endDate = $today->copy();
+                            }
+
+                            $daysLeft = $today->diffInDays($endDate) + 1;
+                            $newDailyPages = max((int) ceil($remainingPages / max($daysLeft, 1)), 1);
+
+                            $record->update([
+                                'daily_pages' => $newDailyPages,
+                                'expected_end_date' => $endDate,
+                            ]);
+
+                            Notification::make()
+                                ->title('تمت إعادة الموازنة')
+                                ->body("المتبقي {$remainingPages} صفحة على {$daysLeft} يوم.")
+                                ->success()
+                                ->send();
+
+                            return;
+                        }
+
+                        $dailyPages = max((int) $record->daily_pages, 1);
+                        $daysNeeded = (int) ceil($remainingPages / $dailyPages);
+                        $newEndDate = $today->copy()->addDays(max($daysNeeded - 1, 0));
+
+                        $record->update([
+                            'expected_end_date' => $newEndDate,
+                        ]);
+
+                        Notification::make()
+                            ->title('تمت إعادة الموازنة')
+                            ->body('تم تحديث تاريخ الختم المتوقع بناءً على الورد الحالي.')
+                            ->success()
+                            ->send();
+                    }),
                 \Filament\Actions\Action::make('toggle_status')
                     ->label(fn (Khatma $record): string => $record->status === KhatmaStatus::Active ? 'إيقاف' : 'استئناف')
                     ->icon(fn (Khatma $record): string => $record->status === KhatmaStatus::Active ? 'heroicon-o-pause' : 'heroicon-o-play')
@@ -459,6 +586,81 @@ class KhatmaResource extends Resource
         }
 
         return $start->diffInDays($end) + 1;
+    }
+
+    protected static function buildDurationDailySummary(?string $startDate, ?string $endDate, int $totalPages): ?string
+    {
+        if (blank($startDate) || blank($endDate) || $totalPages <= 0) {
+            return null;
+        }
+
+        $days = static::calculateInclusiveDays($startDate, $endDate);
+
+        if ($days === null || $days <= 0) {
+            return null;
+        }
+
+        $average = $totalPages / $days;
+        $minPages = (int) floor($average);
+        $maxPages = (int) ceil($average);
+
+        if ($minPages === $maxPages) {
+            return "{$maxPages} صفحة يوميًا";
+        }
+
+        $averageLabel = rtrim(rtrim(number_format($average, 1), '0'), '.');
+
+        return "متغير {$minPages}–{$maxPages} صفحة (متوسط {$averageLabel})";
+    }
+
+    protected static function applyTemplatePreset($get, $set): void
+    {
+        $templateDaysState = $get('template_days');
+
+        if (! is_string($templateDaysState) || ! ctype_digit($templateDaysState)) {
+            return;
+        }
+
+        $templateDays = (int) $templateDaysState;
+
+        if ($templateDays <= 0) {
+            return;
+        }
+
+        $startDate = $get('start_date');
+
+        if (blank($startDate)) {
+            return;
+        }
+
+        $start = Carbon::parse($startDate)->startOfDay();
+        $set('planning_method', PlanningMethod::ByDuration->value);
+        $set('expected_end_date', $start->copy()->addDays(max($templateDays - 1, 0))->toDateString());
+    }
+
+    protected static function defaultCompensationForUser(): bool
+    {
+        $userDefault = auth()->user()?->default_auto_compensate_missed_days;
+
+        if ($userDefault !== null) {
+            return (bool) $userDefault;
+        }
+
+        return (bool) AppSettings::get(
+            AppSettings::KEY_GLOBAL_DEFAULT_AUTO_COMPENSATE,
+            false,
+        );
+    }
+
+    protected static function defaultDailyPagesForUser(): int
+    {
+        $userDefault = auth()->user()?->default_daily_pages;
+
+        $value = $userDefault !== null
+            ? (int) $userDefault
+            : (int) AppSettings::get(AppSettings::KEY_GLOBAL_DEFAULT_DAILY_PAGES, 5);
+
+        return max(min($value, 604), 1);
     }
 
     protected static function resolveCurrentPageFromDirection(mixed $direction, int $startPage, int $endPage): int

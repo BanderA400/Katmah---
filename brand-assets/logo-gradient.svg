@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- 49'1 .*E)  F3.) */1, (FA3,J -->
+    <circle cx="90" cy="90" r="82" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+    <circle cx="90" cy="90" r="68" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+    <path d="M90 55 C90 55, 60 50, 45 58 C38 62, 38 68, 38 75 L38 120 C38 124, 40 126, 45 125 C60 121, 85 120, 90 125" fill="rgba(255,255,255,0.1)" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M90 55 C90 55, 120 50, 135 58 C142 62, 142 68, 142 75 L142 120 C142 124, 140 126, 135 125 C120 121, 95 120, 90 125" fill="rgba(255,255,255,0.1)" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="90" y1="55" x2="90" y2="125" stroke="rgba(255,255,255,0.3)" stroke-width="1.5"/>
+    <path d="M90 18 A72 72 0 0 1 155 60" stroke="#6ee7b7" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M155 60 A72 72 0 0 1 155 120" stroke="#F59E0B" stroke-width="3" stroke-linecap="round" fill="none" opacity="0.6"/>
+    <circle cx="90" cy="18" r="4" fill="#6ee7b7"/>
+    <circle cx="155" cy="60" r="3" fill="#F59E0B"/>
+    <circle cx="155" cy="120" r="3" fill="rgba(255,255,255,0.3)"/>
+</svg>

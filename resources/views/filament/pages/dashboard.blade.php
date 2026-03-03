@@ -5,35 +5,120 @@
         $widgets = $this->getWidgetsData();
         $wirds = $this->getTodayWirds();
         $pausedKhatmas = $this->getPausedKhatmas();
+        $calendar = $this->getMonthlyCommitmentCalendar();
+        $badges = $this->getBadgesData();
     @endphp
 
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <div style="background: var(--khatma-hifz-bg); border-radius: 16px; padding: 1.5rem; text-align: center; border: 1px solid var(--khatma-border);">
-            <div style="font-size: 0.85rem; color: var(--khatma-muted); margin-bottom: 0.5rem;">ختمات نشطة</div>
-            <div style="font-family: 'Amiri', serif; font-size: 2rem; font-weight: 700; color: var(--khatma-hifz-text);">
+        <div style="background: var(--khatma-hifz-bg); border-radius: 14px; padding: 1rem; text-align: center; border: 1px solid var(--khatma-border);">
+            <div style="font-size: 0.8rem; color: var(--khatma-muted); margin-bottom: 0.35rem;">ختمات نشطة</div>
+            <div style="font-family: 'Amiri', serif; font-size: 1.65rem; font-weight: 700; color: var(--khatma-hifz-text); line-height: 1.2;">
                 {{ $widgets['active_count'] }}
             </div>
         </div>
 
-        <div style="background: var(--khatma-review-bg); border-radius: 16px; padding: 1.5rem; text-align: center; border: 1px solid var(--khatma-border);">
-            <div style="font-size: 0.85rem; color: var(--khatma-muted); margin-bottom: 0.5rem;">صفحة منجزة</div>
-            <div style="font-family: 'Amiri', serif; font-size: 2rem; font-weight: 700; color: var(--khatma-review-text);">
+        <div style="background: var(--khatma-review-bg); border-radius: 14px; padding: 1rem; text-align: center; border: 1px solid var(--khatma-border);">
+            <div style="font-size: 0.8rem; color: var(--khatma-muted); margin-bottom: 0.35rem;">إجمالي المنجز</div>
+            <div style="font-family: 'Amiri', serif; font-size: 1.65rem; font-weight: 700; color: var(--khatma-review-text); line-height: 1.2;">
                 {{ $widgets['total_completed'] }}
             </div>
+            <div style="font-size: 0.75rem; color: var(--khatma-muted-soft); margin-top: 0.3rem;">
+                المتبقي: <span style="font-weight: 700; color: var(--khatma-text);">{{ $widgets['total_remaining'] }}</span>
+            </div>
         </div>
 
-        <div style="background: var(--khatma-tilawa-bg); border-radius: 16px; padding: 1.5rem; text-align: center; border: 1px solid var(--khatma-border);">
-            <div style="font-size: 0.85rem; color: var(--khatma-muted); margin-bottom: 0.5rem;">أيام متتالية</div>
-            <div style="font-family: 'Amiri', serif; font-size: 2rem; font-weight: 700; color: var(--khatma-tilawa-text);">
+        <div style="background: var(--khatma-tilawa-bg); border-radius: 14px; padding: 1rem; text-align: center; border: 1px solid var(--khatma-border);">
+            <div style="font-size: 0.8rem; color: var(--khatma-muted); margin-bottom: 0.35rem;">أيام متتالية</div>
+            <div style="font-family: 'Amiri', serif; font-size: 1.65rem; font-weight: 700; color: var(--khatma-tilawa-text); line-height: 1.2;">
                 🔥 {{ $widgets['streak'] }}
             </div>
+            <div style="font-size: 0.75rem; color: var(--khatma-muted-soft); margin-top: 0.3rem;">
+                التزام: <span style="font-weight: 700; color: var(--khatma-text);">{{ $widgets['commitment_rate'] }}%</span>
+            </div>
         </div>
 
-        <div style="background: var(--khatma-surface-soft); border-radius: 16px; padding: 1.5rem; text-align: center; border: 1px solid var(--khatma-border);">
-            <div style="font-size: 0.85rem; color: var(--khatma-muted); margin-bottom: 0.5rem;">نسبة الالتزام</div>
-            <div style="font-family: 'Amiri', serif; font-size: 2rem; font-weight: 700; color: var(--khatma-text);">
-                {{ $widgets['commitment_rate'] }}%
+        <div style="background: var(--khatma-surface-soft); border-radius: 14px; padding: 1rem; text-align: center; border: 1px solid var(--khatma-border);">
+            <div style="font-size: 0.8rem; color: var(--khatma-muted); margin-bottom: 0.35rem;">أقرب ختم متوقع</div>
+            <div style="font-family: 'Amiri', serif; font-size: 1.1rem; font-weight: 700; color: var(--khatma-title); line-height: 1.4;">
+                {{ $widgets['nearest_end_date'] }}
             </div>
+            <div style="font-size: 0.75rem; color: var(--khatma-muted-soft); margin-top: 0.3rem;">
+                إجمالي المتبقي
+            </div>
+            <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.95rem;">
+                {{ $widgets['total_remaining'] }}
+            </div>
+        </div>
+    </div>
+
+    {{-- === تقويم الالتزام الشهري === --}}
+    <div style="margin-top: 1.5rem; background: var(--khatma-surface); border-radius: 16px; padding: 1.1rem; box-shadow: var(--khatma-shadow); border: 1px solid var(--khatma-border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.7rem;">
+            <div style="font-family: 'Amiri', serif; font-size: 1.2rem; font-weight: 700; color: var(--khatma-title);">
+                🗓️ تقويم الالتزام — {{ $calendar['month_label'] }}
+            </div>
+
+            <div style="display: flex; gap: 0.45rem;">
+                <button wire:click="previousCalendarMonth" style="border: 1px solid var(--khatma-border); background: var(--khatma-surface-soft); color: var(--khatma-text); border-radius: 10px; padding: 0.36rem 0.62rem; font-size: 0.76rem; font-weight: 700; cursor: pointer;">
+                    الشهر السابق
+                </button>
+                <button wire:click="nextCalendarMonth" style="border: 1px solid var(--khatma-border); background: var(--khatma-surface-soft); color: var(--khatma-text); border-radius: 10px; padding: 0.36rem 0.62rem; font-size: 0.76rem; font-weight: 700; cursor: pointer;">
+                    الشهر التالي
+                </button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.35rem; margin-bottom: 0.35rem;">
+            @foreach($calendar['weekdays'] as $weekday)
+                <div style="text-align: center; font-size: 0.72rem; color: var(--khatma-muted); font-weight: 700;">{{ $weekday }}</div>
+            @endforeach
+        </div>
+
+        <div style="display: grid; gap: 0.35rem;">
+            @foreach($calendar['weeks'] as $week)
+                <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.35rem;">
+                    @foreach($week as $day)
+                        @php
+                            $dayStyle = match($day['status']) {
+                                'done' => 'background: var(--khatma-success-soft-bg); color: var(--khatma-success-soft-text); border-color: rgba(5, 150, 105, 0.28);',
+                                'missed' => 'background: rgba(220, 38, 38, 0.10); color: #991b1b; border-color: rgba(220, 38, 38, 0.30);',
+                                'future' => 'background: var(--khatma-surface-soft); color: var(--khatma-muted); border-color: var(--khatma-border);',
+                                'inactive' => 'background: rgba(244, 243, 246, 0.65); color: var(--khatma-muted-soft); border-color: var(--khatma-border);',
+                                default => 'background: transparent; color: transparent; border-color: transparent;',
+                            };
+                        @endphp
+
+                        <div style="height: 34px; border: 1px solid; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 0.76rem; font-weight: {{ $day['is_today'] ? '800' : '700' }}; {{ $dayStyle }}">
+                            {{ $day['in_month'] ? $day['day'] : '' }}
+                        </div>
+                    @endforeach
+                </div>
+            @endforeach
+        </div>
+
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 0.78rem; color: var(--khatma-muted);">
+            <span>✅ منجز: <strong style="color: var(--khatma-text);">{{ $calendar['done_days'] }}</strong></span>
+            <span>⚠️ فائت: <strong style="color: var(--khatma-text);">{{ $calendar['missed_days'] }}</strong></span>
+            <span>📊 التزام الشهر: <strong style="color: var(--khatma-text);">{{ $calendar['month_commitment'] }}%</strong></span>
+        </div>
+    </div>
+
+    {{-- === الأهداف والشارات === --}}
+    <div style="margin-top: 1.4rem;">
+        <h2 style="font-family: 'Amiri', serif; font-size: 1.25rem; font-weight: 700; color: var(--khatma-title); margin-bottom: 0.7rem;">
+            🏅 الأهداف والشارات
+        </h2>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            @foreach($badges as $badge)
+                <div style="border-radius: 12px; padding: 0.75rem; border: 1px solid var(--khatma-border); background: {{ $badge['is_unlocked'] ? 'var(--khatma-success-soft-bg)' : 'var(--khatma-surface)' }};">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.35rem;">
+                        <div style="font-size: 0.82rem; font-weight: 800; color: var(--khatma-text);">{{ $badge['title'] }}</div>
+                        <div style="font-size: 0.9rem;">{{ $badge['is_unlocked'] ? '✅' : '🔒' }}</div>
+                    </div>
+                    <div style="font-size: 0.74rem; color: var(--khatma-muted);">{{ $badge['description'] }}</div>
+                </div>
+            @endforeach
         </div>
     </div>
 
@@ -77,50 +162,63 @@
                                 'pages_color' => 'var(--khatma-tilawa-text)', 'label' => '📿 تلاوة',
                             ],
                         };
+                        $showTodaySegment = $wird['is_started'] && ! $wird['is_rest_day'] && $wird['today_target_pages'] > 0;
                     @endphp
 
-                    <div style="background: var(--khatma-surface); border-radius: 16px; padding: 1.5rem; box-shadow: var(--khatma-shadow); border: 1px solid var(--khatma-border);">
+                    <div style="background: var(--khatma-surface); border-radius: 14px; padding: 1.15rem; box-shadow: var(--khatma-shadow); border: 1px solid var(--khatma-border);">
 
                         {{-- هيدر البطاقة --}}
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                            <div style="font-weight: 700; color: var(--khatma-text); font-size: 1.05rem;">{{ $wird['name'] }}</div>
+                            <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.98rem;">{{ $wird['name'] }}</div>
                             <span style="background: {{ $typeColors['badge_bg'] }}; color: {{ $typeColors['badge_text'] }}; padding: 0.25rem 0.8rem; border-radius: 50px; font-size: 0.8rem; font-weight: 600;">
                                 {{ $typeColors['label'] }}
                             </span>
                         </div>
 
-                        {{-- الصفحات --}}
-                        <div style="font-family: 'Amiri', serif; font-size: 1.6rem; font-weight: 700; color: {{ $typeColors['pages_color'] }}; margin-bottom: 0.3rem;">
-                            صفحة {{ $wird['from_page'] }} — {{ $wird['to_page'] }}
-                        </div>
+                        @if($showTodaySegment)
+                            {{-- الصفحات --}}
+                            <div style="font-family: 'Amiri', serif; font-size: 1.3rem; font-weight: 700; color: {{ $typeColors['pages_color'] }}; margin-bottom: 0.25rem;">
+                                صفحة {{ $wird['from_page'] }} — {{ $wird['to_page'] }}
+                            </div>
 
-                        {{-- السورة --}}
-                        <div style="font-size: 0.9rem; color: var(--khatma-muted); margin-bottom: 1rem;">
-                            {{ $wird['surah_name'] }}
-                        </div>
+                            {{-- السورة --}}
+                            <div style="font-size: 0.82rem; color: var(--khatma-muted); margin-bottom: 0.85rem;">
+                                {{ $wird['surah_name'] }}
+                            </div>
+                        @else
+                            <div style="font-size: 0.82rem; color: var(--khatma-muted); margin-bottom: 0.85rem; padding: 0.5rem 0.7rem; border-radius: 10px; background: var(--khatma-surface-soft); border: 1px solid var(--khatma-border);">
+                                @if(! $wird['is_started'])
+                                    سيظهر نطاق ورد اليوم عند بداية الخطة
+                                @elseif($wird['is_rest_day'])
+                                    لا يوجد نطاق صفحات لليوم
+                                @else
+                                    تم إنجاز نطاق اليوم
+                                @endif
+                            </div>
+                        @endif
 
                         {{-- تفاصيل الورد --}}
                         <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; margin-bottom: 1rem;">
-                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.6rem; border: 1px solid var(--khatma-border);">
-                                <div style="font-size: 0.75rem; color: var(--khatma-muted);">الورد اليومي</div>
-                                <div style="font-weight: 700; color: var(--khatma-text);">{{ $wird['today_target_pages'] }} صفحة</div>
+                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.5rem; border: 1px solid var(--khatma-border);">
+                                <div style="font-size: 0.7rem; color: var(--khatma-muted);">الورد اليومي</div>
+                                <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.88rem;">{{ $wird['today_target_pages'] }} صفحة</div>
                             </div>
-                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.6rem; border: 1px solid var(--khatma-border);">
-                                <div style="font-size: 0.75rem; color: var(--khatma-muted);">المتبقي اليوم</div>
-                                <div style="font-weight: 700; color: var(--khatma-text);">{{ $wird['today_remaining_pages'] }} صفحة</div>
+                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.5rem; border: 1px solid var(--khatma-border);">
+                                <div style="font-size: 0.7rem; color: var(--khatma-muted);">المتبقي اليوم</div>
+                                <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.88rem;">{{ $wird['today_remaining_pages'] }} صفحة</div>
                             </div>
-                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.6rem; border: 1px solid var(--khatma-border);">
-                                <div style="font-size: 0.75rem; color: var(--khatma-muted);">المنجز اليوم</div>
-                                <div style="font-weight: 700; color: var(--khatma-text);">{{ $wird['today_done_pages'] }} صفحة</div>
+                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.5rem; border: 1px solid var(--khatma-border);">
+                                <div style="font-size: 0.7rem; color: var(--khatma-muted);">المنجز اليوم</div>
+                                <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.88rem;">{{ $wird['today_done_pages'] }} صفحة</div>
                             </div>
-                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.6rem; border: 1px solid var(--khatma-border);">
-                                <div style="font-size: 0.75rem; color: var(--khatma-muted);">المتبقي بالختمة</div>
-                                <div style="font-weight: 700; color: var(--khatma-text);">{{ $wird['remaining_pages_total'] }} صفحة</div>
+                            <div style="background: var(--khatma-surface-soft); border-radius: 10px; padding: 0.5rem; border: 1px solid var(--khatma-border);">
+                                <div style="font-size: 0.7rem; color: var(--khatma-muted);">المتبقي بالختمة</div>
+                                <div style="font-weight: 700; color: var(--khatma-text); font-size: 0.88rem;">{{ $wird['remaining_pages_total'] }} صفحة</div>
                             </div>
                         </div>
 
                         @if($wird['backlog_pages'] > 0)
-                            <div style="margin-bottom: 1rem; padding: 0.5rem 0.7rem; border-radius: 10px; background: var(--khatma-warning-soft-bg); color: var(--khatma-warning-soft-text); font-size: 0.8rem;">
+                            <div style="margin-bottom: 0.85rem; padding: 0.45rem 0.65rem; border-radius: 10px; background: var(--khatma-warning-soft-bg); color: var(--khatma-warning-soft-text); font-size: 0.76rem;">
                                 متبقي من الخطة: {{ $wird['backlog_pages'] }} صفحة
                             </div>
                         @endif
@@ -137,43 +235,43 @@
                         </div>
 
                         {{-- تاريخ الختم المتوقع --}}
-                        <div style="font-size: 0.8rem; color: var(--khatma-muted-soft); margin-bottom: 1rem;">
+                        <div style="font-size: 0.74rem; color: var(--khatma-muted-soft); margin-bottom: 0.85rem;">
                             📅 الختم المتوقع: {{ $wird['expected_end_date'] }}
                         </div>
 
                         {{-- أزرار الإنجاز --}}
                         @if(! $wird['is_started'])
-                            <div style="width: 100%; padding: 0.8rem; border-radius: 12px; background: var(--khatma-surface-soft); color: var(--khatma-muted); text-align: center; font-weight: 600; font-size: 0.95rem; border: 1px solid var(--khatma-border);">
+                            <div style="width: 100%; padding: 0.72rem; border-radius: 12px; background: var(--khatma-surface-soft); color: var(--khatma-muted); text-align: center; font-weight: 600; font-size: 0.88rem; border: 1px solid var(--khatma-border);">
                                 لم يبدأ موعد هذه الختمة بعد
                             </div>
                         @elseif($wird['is_rest_day'])
-                            <div style="width: 100%; padding: 0.8rem; border-radius: 12px; background: var(--khatma-success-soft-bg); color: var(--khatma-success-soft-text); text-align: center; font-weight: 600; font-size: 0.95rem;">
+                            <div style="width: 100%; padding: 0.72rem; border-radius: 12px; background: var(--khatma-success-soft-bg); color: var(--khatma-success-soft-text); text-align: center; font-weight: 600; font-size: 0.88rem;">
                                 لا يوجد ورد مطلوب اليوم حسب الخطة
                             </div>
                         @elseif($wird['is_done_today'])
-                            <div style="width: 100%; padding: 0.8rem; border-radius: 12px; background: var(--khatma-review-bg); color: var(--khatma-review-text); text-align: center; font-weight: 700; font-size: 1rem; margin-bottom: 0.6rem;">
+                            <div style="width: 100%; padding: 0.72rem; border-radius: 12px; background: var(--khatma-review-bg); color: var(--khatma-review-text); text-align: center; font-weight: 700; font-size: 0.9rem; margin-bottom: 0.55rem;">
                                 ✅ تم إنجاز ورد اليوم
                             </div>
                         @else
                             <button
                                 wire:click="completeWird({{ $wird['id'] }})"
-                                style="width: 100%; padding: 0.8rem; border-radius: 12px; border: none; background: linear-gradient(135deg, {{ $typeColors['btn_from'] }}, {{ $typeColors['btn_to'] }}); color: white; font-family: 'Tajawal', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; margin-bottom: 0.6rem;"
+                                style="width: 100%; padding: 0.72rem; border-radius: 12px; border: none; background: linear-gradient(135deg, {{ $typeColors['btn_from'] }}, {{ $typeColors['btn_to'] }}); color: white; font-family: 'Tajawal', sans-serif; font-size: 0.9rem; font-weight: 700; cursor: pointer; margin-bottom: 0.55rem;"
                             >
                                 ✓ أتممت كامل الورد
                             </button>
 
-                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.6rem;">
+                            <div style="display: flex; gap: 0.45rem; align-items: center; margin-bottom: 0.55rem;">
                                 <input
                                     type="number"
                                     min="1"
                                     max="{{ max($wird['today_remaining_pages'], 1) }}"
                                     wire:model.defer="partialPages.{{ $wird['id'] }}"
                                     placeholder="عدد الصفحات"
-                                    style="flex: 1; border: 1px solid var(--khatma-border); border-radius: 10px; padding: 0.55rem 0.7rem; font-size: 0.9rem; background: var(--khatma-surface); color: var(--khatma-text);"
+                                    style="flex: 1; border: 1px solid var(--khatma-border); border-radius: 10px; padding: 0.48rem 0.65rem; font-size: 0.82rem; background: var(--khatma-surface); color: var(--khatma-text);"
                                 >
                                 <button
                                     wire:click="completePartialWird({{ $wird['id'] }})"
-                                    style="border: none; border-radius: 10px; background: var(--khatma-surface-soft); color: var(--khatma-text); padding: 0.55rem 0.9rem; font-weight: 700; cursor: pointer;"
+                                    style="border: none; border-radius: 10px; background: var(--khatma-surface-soft); color: var(--khatma-text); padding: 0.48rem 0.82rem; font-size: 0.82rem; font-weight: 700; cursor: pointer;"
                                 >
                                     تسجيل جزئي
                                 </button>
@@ -182,9 +280,16 @@
 
                         <button
                             wire:click="pauseKhatma({{ $wird['id'] }})"
-                            style="width: 100%; padding: 0.55rem; border-radius: 10px; border: 1px solid var(--khatma-border); background: var(--khatma-surface); color: var(--khatma-muted); font-weight: 600; cursor: pointer;"
+                            style="width: 100%; padding: 0.48rem; border-radius: 10px; border: 1px solid var(--khatma-border); background: var(--khatma-surface); color: var(--khatma-muted); font-size: 0.82rem; font-weight: 600; cursor: pointer;"
                         >
                             إيقاف مؤقت
+                        </button>
+
+                        <button
+                            wire:click="rebalanceKhatma({{ $wird['id'] }})"
+                            style="width: 100%; margin-top: 0.45rem; padding: 0.48rem; border-radius: 10px; border: 1px solid var(--khatma-border); background: var(--khatma-surface-soft); color: var(--khatma-text); font-size: 0.82rem; font-weight: 700; cursor: pointer;"
+                        >
+                            إعادة موازنة الخطة
                         </button>
                     </div>
                 @endforeach
@@ -218,7 +323,7 @@
                         };
                     @endphp
 
-                    <div style="background: var(--khatma-surface); border-radius: 14px; padding: 1rem 1.2rem; box-shadow: var(--khatma-shadow); border: 1px solid var(--khatma-border);">
+                    <div style="background: var(--khatma-surface); border-radius: 14px; padding: 0.9rem 1rem; box-shadow: var(--khatma-shadow); border: 1px solid var(--khatma-border);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.7rem;">
                             <div style="font-weight: 700; color: var(--khatma-text);">{{ $khatma['name'] }}</div>
                             <span style="background: {{ $typeColors['badge_bg'] }}; color: {{ $typeColors['badge_text'] }}; padding: 0.2rem 0.65rem; border-radius: 50px; font-size: 0.75rem; font-weight: 700;">

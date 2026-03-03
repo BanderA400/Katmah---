@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- #JBHF) .*E) 'DE5:1)  Favicon -->
+    <path d="M30 12 C30 12, 18 10, 12 15 C9 17.5, 9 20, 9 23 L9 42 C9 43.5, 10 44.5, 12 44 C18 42.5, 27 42, 30 44" fill="#f3e8ff" stroke="#5B21B6" stroke-width="2" stroke-linecap="round"/>
+    <path d="M30 12 C30 12, 42 10, 48 15 C51 17.5, 51 20, 51 23 L51 42 C51 43.5, 50 44.5, 48 44 C42 42.5, 33 42, 30 44" fill="#f3e8ff" stroke="#5B21B6" stroke-width="2" stroke-linecap="round"/>
+    <line x1="30" y1="12" x2="30" y2="44" stroke="#c9a0f5" stroke-width="1"/>
+</svg>
