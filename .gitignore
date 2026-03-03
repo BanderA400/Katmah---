@@ -13,6 +13,7 @@
 /.zed
 /auth.json
 /node_modules
+/brand-assets/node_modules
 /public/build
 /public/hot
 /public/storage
