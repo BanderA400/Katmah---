@@ -99,16 +99,6 @@ Route::get('/clear-cache', function () {
     Artisan::call('cache:clear');
     Artisan::call('config:cache');
     
-    // Test email
-    try {
-        \Illuminate\Support\Facades\Mail::raw('تجربة إرسال من ختمة', function ($message) {
-            $message->to('ibander502@gmail.com') // حط إيميلك الحقيقي
-                    ->subject('تجربة ختمة');
-        });
-        return 'Cache cleared + Email sent! ✅';
-    } catch (\Exception $e) {
-        return 'Cache cleared ✅ but email failed ❌: ' . $e->getMessage();
-    }
 });
 
 require __DIR__.'/auth.php';

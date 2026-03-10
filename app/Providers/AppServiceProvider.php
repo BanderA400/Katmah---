@@ -19,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        config([
+            'mail.default' => env('MAIL_MAILER', 'resend'),
+            'mail.from.address' => env('MAIL_FROM_ADDRESS', 'noreply@getkhatmah.com'),
+            'mail.from.name' => env('MAIL_FROM_NAME', 'ختمة'),
+        ]);
     }
 }
