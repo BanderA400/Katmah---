@@ -6,12 +6,13 @@
     "keywords": ["laravel", "framework"],
     "license": "MIT",
     "require": {
+        "php": "^8.3",
         "ext-intl": "*",
         "ext-zip": "*",
-        "php": "^8.3",
         "filament/filament": "^4.0",
         "laravel/framework": "^12.0",
-        "laravel/tinker": "^2.10.1"
+        "laravel/tinker": "^2.10.1",
+        "resend/resend-php": "^1.1"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
