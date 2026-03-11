@@ -8,7 +8,6 @@ use App\Support\LandingVisitTracker;
 use Filament\Auth\Http\Controllers\EmailVerificationController as FilamentEmailVerificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\Artisan;
 
 
 Route::get('/', function (Request $request) {
@@ -93,32 +92,4 @@ Route::middleware('auth')->group(function () {
     Route::get('/app/history/export/print', [HistoryExportController::class, 'print'])->name('history.export.print');
 });
 
-
-Route::get('/fix-mail', function () {
-    // 1. Clear all cache
-    Artisan::call('config:clear');
-    Artisan::call('cache:clear');
-    
-    // 2. Show current mail config
-    $config = [
-        'mailer' => config('mail.default'),
-        'from' => config('mail.from'),
-        'resend_key_exists' => !empty(config('services.resend.key')),
-    ];
-    
-    // 3. Rebuild cache
-    Artisan::call('config:cache');
-    
-    // 4. Show new mail config
-    $newConfig = [
-        'mailer' => config('mail.default'),
-        'from' => config('mail.from'),
-        'resend_key_exists' => !empty(config('services.resend.key')),
-    ];
-    
-    return [
-        'before_cache' => $config,
-        'after_cache' => $newConfig,
-    ];
-});
 require __DIR__.'/auth.php';
