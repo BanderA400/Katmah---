@@ -30,6 +30,10 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'default_auto_compensate_missed_days' => false,
             'default_daily_pages' => 5,
+            'wird_reminders_enabled' => true,
+            'wird_reminders_time' => '20:00:00',
+            'weekly_reports_enabled' => true,
+            'monthly_reports_enabled' => true,
             'is_admin' => false,
             'remember_token' => Str::random(10),
         ];

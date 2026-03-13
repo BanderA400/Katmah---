@@ -5,6 +5,7 @@ namespace App\Filament\Resources\KhatmaResource\Pages;
 use App\Enums\KhatmaDirection;
 use App\Enums\PlanningMethod;
 use App\Filament\Resources\KhatmaResource;
+use App\Support\SmartKhatmaPlanner;
 use Carbon\Carbon;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
@@ -35,6 +36,7 @@ class EditKhatma extends EditRecord
         // لا نثق بأي قيم حساسة قادمة من الطلب.
         $data['user_id'] = (int) $record->user_id;
         $data['completed_pages'] = (int) $record->completed_pages;
+        $data['smart_extension_days_used'] = (int) ($record->smart_extension_days_used ?? 0);
 
         if ($hasProgress) {
             $data['direction'] = static::stateValue($record->direction);
@@ -71,7 +73,19 @@ class EditKhatma extends EditRecord
                 }
 
                 $days = $start->diffInDays($end) + 1;
-                $data['daily_pages'] = (int) ceil($data['total_pages'] / $days);
+                $data['daily_pages'] = SmartKhatmaPlanner::calculateRoundedDailyTarget(
+                    (int) $data['total_pages'],
+                    $days,
+                );
+
+                $originalStart = $record->start_date?->toDateString();
+                $originalEnd = $record->expected_end_date?->toDateString();
+                $newStart = $start->toDateString();
+                $newEnd = $end->toDateString();
+
+                if ($newStart !== $originalStart || $newEnd !== $originalEnd) {
+                    $data['smart_extension_days_used'] = 0;
+                }
             }
         }
 
@@ -83,7 +97,11 @@ class EditKhatma extends EditRecord
                 $days = (int) ceil($data['total_pages'] / $dailyPages);
                 $data['expected_end_date'] = Carbon::parse($startDate)->addDays(max($days - 1, 0))->format('Y-m-d');
             }
+
+            $data['smart_extension_days_used'] = 0;
         }
+
+        $data = $this->normalizeReminderSettings($data);
 
         $direction = static::stateValue($data['direction'] ?? KhatmaDirection::Forward->value);
 
@@ -101,5 +119,70 @@ class EditKhatma extends EditRecord
     protected static function stateValue(mixed $state): mixed
     {
         return $state instanceof \BackedEnum ? $state->value : $state;
+    }
+
+    private function normalizeReminderSettings(array $data): array
+    {
+        $useCustom = (bool) ($data['use_custom_reminder_settings'] ?? false);
+        $data['use_custom_reminder_settings'] = $useCustom;
+
+        if (! $useCustom) {
+            $data['reminder_enabled'] = null;
+            $data['reminder_time'] = null;
+
+            return $data;
+        }
+
+        $enabled = (bool) ($data['reminder_enabled'] ?? true);
+        $data['reminder_enabled'] = $enabled;
+
+        if (! $enabled) {
+            $data['reminder_time'] = null;
+
+            return $data;
+        }
+
+        $rawTime = $data['reminder_time'] ?? null;
+
+        if (! is_string($rawTime) || trim($rawTime) === '') {
+            throw ValidationException::withMessages([
+                'reminder_time' => 'وقت التذكير مطلوب عند تفعيل تذكير الختمة.',
+            ]);
+        }
+
+        $normalizedTime = self::normalizeReminderTimeValue($rawTime);
+
+        if ($normalizedTime === null) {
+            throw ValidationException::withMessages([
+                'reminder_time' => 'وقت التذكير يجب أن يكون بصيغة ساعة:دقيقة.',
+            ]);
+        }
+
+        $data['reminder_time'] = $normalizedTime;
+
+        return $data;
+    }
+
+    private static function normalizeReminderTimeValue(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        if (preg_match('/^(\d{2}):(\d{2})(?::(\d{2}))?$/', $value, $matches) !== 1) {
+            return null;
+        }
+
+        $hour = (int) $matches[1];
+        $minute = (int) $matches[2];
+        $second = isset($matches[3]) ? (int) $matches[3] : 0;
+
+        if ($hour > 23 || $minute > 59 || $second > 59) {
+            return null;
+        }
+
+        return sprintf('%02d:%02d:%02d', $hour, $minute, $second);
     }
 }

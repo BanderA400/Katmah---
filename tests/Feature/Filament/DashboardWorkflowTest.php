@@ -11,8 +11,11 @@ use App\Filament\Pages\Dashboard;
 use App\Models\DailyRecord;
 use App\Models\Khatma;
 use App\Models\User;
+use App\Notifications\DailyWirdCompletedNotification;
+use App\Notifications\KhatmaCompletedNotification;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -299,6 +302,114 @@ class DashboardWorkflowTest extends TestCase
         $khatma->refresh();
 
         $this->assertSame(Carbon::today()->addDays(6)->toDateString(), $khatma->expected_end_date?->toDateString());
+    }
+
+    public function test_rebalance_by_duration_applies_smart_extension_before_raising_daily_target(): void
+    {
+        Carbon::setTestNow('2026-03-10 09:00:00');
+
+        $user = User::factory()->create();
+
+        $khatma = Khatma::create([
+            'user_id' => $user->id,
+            'name' => 'ختمة ذكية',
+            'type' => KhatmaType::Tilawa,
+            'scope' => KhatmaScope::Custom,
+            'direction' => KhatmaDirection::Forward,
+            'start_page' => 1,
+            'end_page' => 300,
+            'total_pages' => 300,
+            'planning_method' => PlanningMethod::ByDuration,
+            'auto_compensate_missed_days' => true,
+            'daily_pages' => 30,
+            'start_date' => Carbon::today()->subDays(5),
+            'expected_end_date' => Carbon::today()->addDays(9),
+            'status' => KhatmaStatus::Active,
+            'current_page' => 1,
+            'completed_pages' => 0,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(Dashboard::class)
+            ->call('rebalanceKhatma', $khatma->id);
+
+        $khatma->refresh();
+
+        $this->assertSame(Carbon::today()->addDays(11)->toDateString(), $khatma->expected_end_date?->toDateString());
+        $this->assertSame(25, (int) $khatma->daily_pages);
+        $this->assertSame(2, (int) $khatma->smart_extension_days_used);
+    }
+
+    public function test_daily_wird_completion_sends_congrats_email(): void
+    {
+        Carbon::setTestNow('2026-03-12 09:00:00');
+
+        $user = User::factory()->create();
+        Notification::fake();
+
+        $khatma = Khatma::create([
+            'user_id' => $user->id,
+            'name' => 'ختمة يومية',
+            'type' => KhatmaType::Tilawa,
+            'scope' => KhatmaScope::Custom,
+            'direction' => KhatmaDirection::Forward,
+            'start_page' => 1,
+            'end_page' => 20,
+            'total_pages' => 20,
+            'planning_method' => PlanningMethod::ByWird,
+            'auto_compensate_missed_days' => false,
+            'daily_pages' => 5,
+            'start_date' => Carbon::today(),
+            'expected_end_date' => Carbon::today()->addDays(3),
+            'status' => KhatmaStatus::Active,
+            'current_page' => 1,
+            'completed_pages' => 0,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(Dashboard::class)
+            ->call('completeWird', $khatma->id);
+
+        Notification::assertSentTo($user, DailyWirdCompletedNotification::class);
+        Notification::assertNotSentTo($user, KhatmaCompletedNotification::class);
+    }
+
+    public function test_khatma_completion_sends_final_congrats_email(): void
+    {
+        Carbon::setTestNow('2026-03-12 09:00:00');
+
+        $user = User::factory()->create();
+        Notification::fake();
+
+        $khatma = Khatma::create([
+            'user_id' => $user->id,
+            'name' => 'ختمة مكتملة',
+            'type' => KhatmaType::Tilawa,
+            'scope' => KhatmaScope::Custom,
+            'direction' => KhatmaDirection::Forward,
+            'start_page' => 1,
+            'end_page' => 5,
+            'total_pages' => 5,
+            'planning_method' => PlanningMethod::ByWird,
+            'auto_compensate_missed_days' => false,
+            'daily_pages' => 5,
+            'start_date' => Carbon::today(),
+            'expected_end_date' => Carbon::today(),
+            'status' => KhatmaStatus::Active,
+            'current_page' => 1,
+            'completed_pages' => 0,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(Dashboard::class)
+            ->call('completeWird', $khatma->id);
+
+        $this->assertSame(KhatmaStatus::Completed, $khatma->fresh()->status);
+        Notification::assertSentTo($user, KhatmaCompletedNotification::class);
+        Notification::assertNotSentTo($user, DailyWirdCompletedNotification::class);
     }
 
     public function test_monthly_commitment_calendar_counts_done_and_missed_days(): void

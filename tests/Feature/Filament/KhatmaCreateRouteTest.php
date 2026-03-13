@@ -107,6 +107,31 @@ class KhatmaCreateRouteTest extends TestCase
         $this->assertDatabaseCount('khatmas', 0);
     }
 
+    public function test_create_page_rejects_invalid_custom_reminder_time(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user);
+
+        Livewire::test(CreateKhatma::class)
+            ->fillForm([
+                'name' => 'ختمة بوقت غير صالح',
+                'type' => KhatmaType::Tilawa,
+                'scope' => KhatmaScope::Full,
+                'direction' => KhatmaDirection::Forward,
+                'start_page' => 1,
+                'end_page' => 604,
+                'start_date' => '2026-03-01',
+                'planning_method' => PlanningMethod::ByWird,
+                'daily_pages' => 10,
+            ])
+            ->set('data.use_custom_reminder_settings', true)
+            ->set('data.reminder_enabled', true)
+            ->set('data.reminder_time', '99:99')
+            ->call('create')
+            ->assertHasErrors(['reminder_time']);
+    }
+
     public function test_create_with_backward_direction_starts_from_end_page(): void
     {
         $user = User::factory()->create();
@@ -255,8 +280,9 @@ class KhatmaCreateRouteTest extends TestCase
                 'start_page' => 1,
                 'end_page' => 604,
                 'start_date' => '2026-03-01',
-                'planning_method' => PlanningMethod::ByWird,
             ])
+            ->set('data.template_days', 'manual')
+            ->set('data.planning_method', PlanningMethod::ByWird->value)
             ->call('create')
             ->assertHasNoFormErrors();
 
@@ -272,28 +298,97 @@ class KhatmaCreateRouteTest extends TestCase
 
         $this->actingAs($user);
 
+        foreach (['10', '20', '30'] as $templateDays) {
+            Khatma::query()->delete();
+
+            Livewire::test(CreateKhatma::class)
+                ->fillForm([
+                    'name' => "ختمة بالقالب {$templateDays}",
+                    'type' => KhatmaType::Review,
+                    'scope' => KhatmaScope::Full,
+                    'direction' => KhatmaDirection::Forward,
+                    'start_page' => 1,
+                    'end_page' => 604,
+                    'start_date' => '2026-03-01',
+                    'planning_method' => PlanningMethod::ByDuration,
+                    'expected_end_date' => '2026-03-30',
+                    'daily_pages' => 5,
+                ])
+                ->set('data.template_days', $templateDays)
+                ->set('data.planning_method', PlanningMethod::ByWird->value)
+                ->set('data.daily_pages', 5)
+                ->call('create')
+                ->assertHasNoFormErrors();
+
+            $khatma = Khatma::query()->firstOrFail();
+
+            $this->assertSame(PlanningMethod::ByWird, $khatma->planning_method);
+            $this->assertSame('2026-06-29', $khatma->expected_end_date?->toDateString());
+        }
+    }
+
+    public function test_default_30_day_template_is_applied_without_manual_template_change(): void
+    {
+        Carbon::setTestNow('2026-03-01 10:00:00');
+
+        $user = User::factory()->create();
+
+        $this->actingAs($user);
+
         Livewire::test(CreateKhatma::class)
             ->fillForm([
-                'name' => 'ختمة بالقالب',
-                'type' => KhatmaType::Review,
+                'name' => 'ختمة افتراضية 30 يوم',
+                'type' => KhatmaType::Tilawa,
                 'scope' => KhatmaScope::Full,
                 'direction' => KhatmaDirection::Forward,
                 'start_page' => 1,
                 'end_page' => 604,
                 'start_date' => '2026-03-01',
-                'planning_method' => PlanningMethod::ByDuration,
-                'expected_end_date' => '2026-03-30',
-                'daily_pages' => 5,
             ])
-            ->set('data.template_days', '30')
-            ->set('data.planning_method', PlanningMethod::ByWird->value)
-            ->set('data.daily_pages', 5)
             ->call('create')
             ->assertHasNoFormErrors();
 
         $khatma = Khatma::query()->firstOrFail();
 
-        $this->assertSame(PlanningMethod::ByWird, $khatma->planning_method);
-        $this->assertSame('2026-06-29', $khatma->expected_end_date?->toDateString());
+        $this->assertSame(PlanningMethod::ByDuration, $khatma->planning_method);
+        $this->assertSame('2026-03-30', $khatma->expected_end_date?->toDateString());
+        $this->assertSame(20, (int) $khatma->daily_pages);
+    }
+
+    public function test_quick_templates_10_and_20_days_apply_expected_duration_plan(): void
+    {
+        Carbon::setTestNow('2026-03-01 10:00:00');
+
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $cases = [
+            '10' => ['end_date' => '2026-03-10', 'daily_pages' => 60],
+            '20' => ['end_date' => '2026-03-20', 'daily_pages' => 30],
+        ];
+
+        foreach ($cases as $templateDays => $expected) {
+            Khatma::query()->delete();
+
+            Livewire::test(CreateKhatma::class)
+                ->fillForm([
+                    'name' => "ختمة {$templateDays} يوم",
+                    'type' => KhatmaType::Tilawa,
+                    'scope' => KhatmaScope::Full,
+                    'direction' => KhatmaDirection::Forward,
+                    'start_page' => 1,
+                    'end_page' => 604,
+                    'start_date' => '2026-03-01',
+                ])
+                ->set('data.template_days', $templateDays)
+                ->call('create')
+                ->assertHasNoFormErrors();
+
+            $khatma = Khatma::query()->firstOrFail();
+
+            $this->assertSame(PlanningMethod::ByDuration, $khatma->planning_method);
+            $this->assertSame($expected['end_date'], $khatma->expected_end_date?->toDateString());
+            $this->assertSame($expected['daily_pages'], (int) $khatma->daily_pages);
+        }
     }
 }

@@ -8,6 +8,9 @@ use App\Enums\PlanningMethod;
 use App\Models\DailyRecord;
 use App\Models\Khatma;
 use App\Models\Surah;
+use App\Notifications\DailyWirdCompletedNotification;
+use App\Notifications\KhatmaCompletedNotification;
+use App\Support\SmartKhatmaPlanner;
 use Carbon\Carbon;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -110,8 +113,9 @@ class Dashboard extends Page
         $wirds = [];
 
         foreach ($activeKhatmas as $khatma) {
+            $smartPlan = $this->applySmartPlanAdjustments($khatma, $today);
             $todayCompletedPages = (int) ($todayCompletedByKhatma[$khatma->id] ?? 0);
-            $plan = $this->calculateTodayPlan($khatma, $today, $todayCompletedPages);
+            $plan = $this->calculateTodayPlan($khatma, $today, $todayCompletedPages, $smartPlan);
 
             $fromPage = $khatma->current_page;
             [$toPage] = $this->resolveSegmentFromCurrentPage(
@@ -139,6 +143,12 @@ class Dashboard extends Page
                 'backlog_pages' => $plan['backlog_pages'],
                 'is_done_today' => $plan['today_target_pages'] > 0 && $plan['today_remaining_pages'] === 0,
                 'is_rest_day' => $plan['today_target_pages'] === 0 && $plan['is_started'] && $plan['remaining_total_pages'] > 0,
+                'smart_daily_cap' => $smartPlan['daily_cap'],
+                'smart_extension_applied_days' => $smartPlan['applied_extension_days'],
+                'smart_extension_used_days' => $smartPlan['extension_days_used'],
+                'smart_extension_remaining_days' => $smartPlan['extension_days_remaining'],
+                'smart_needs_higher_daily_pages' => $smartPlan['needs_higher_daily_pages'],
+                'smart_suggested_daily_pages' => $smartPlan['suggested_daily_pages'],
             ];
         }
 
@@ -414,23 +424,31 @@ class Dashboard extends Page
             }
 
             if ($khatma->planning_method === PlanningMethod::ByDuration) {
+                $smartPlan = $this->applySmartPlanAdjustments($khatma, $today);
                 $endDate = $khatma->expected_end_date?->copy()->startOfDay() ?? $today->copy();
-
-                if ($endDate->lt($today)) {
-                    $endDate = $today->copy();
-                }
-
-                $daysLeft = $today->diffInDays($endDate) + 1;
-                $newDailyPages = max((int) ceil($remainingPages / max($daysLeft, 1)), 1);
+                $daysLeft = $this->calculateDaysLeftInclusive($today, $endDate);
+                $newDailyPages = SmartKhatmaPlanner::calculateRoundedDailyTarget($remainingPages, $daysLeft);
 
                 $khatma->update([
                     'daily_pages' => $newDailyPages,
                     'expected_end_date' => $endDate,
+                    'smart_extension_days_used' => $smartPlan['extension_days_used'],
                 ]);
+
+                if ($smartPlan['needs_higher_daily_pages']) {
+                    return [
+                        'type' => 'warning',
+                        'message' => "تم تمديد الخطة قدر الإمكان. يلزم نحو {$smartPlan['suggested_daily_pages']} صفحة يوميًا لإكمالها في الوقت المحدد.",
+                    ];
+                }
+
+                $extensionText = $smartPlan['applied_extension_days'] > 0
+                    ? " بعد تمديد {$smartPlan['applied_extension_days']} يوم."
+                    : '.';
 
                 return [
                     'type' => 'success',
-                    'message' => "تمت إعادة الموازنة: {$remainingPages} صفحة على {$daysLeft} يوم.",
+                    'message' => "تمت إعادة الموازنة: {$remainingPages} صفحة على {$daysLeft} يوم{$extensionText}",
                 ];
             }
 
@@ -483,8 +501,9 @@ class Dashboard extends Page
                 return ['type' => 'warning', 'message' => 'الختمة لم تبدأ بعد'];
             }
 
+            $smartPlan = $this->applySmartPlanAdjustments($khatma, $today);
             $todayCompletedPages = $this->getTodayCompletedPages($khatma->id, $today);
-            $plan = $this->calculateTodayPlan($khatma, $today, $todayCompletedPages);
+            $plan = $this->calculateTodayPlan($khatma, $today, $todayCompletedPages, $smartPlan);
             $remainingToday = $plan['today_remaining_pages'];
             $remainingTotal = max($khatma->total_pages - $khatma->completed_pages, 0);
 
@@ -542,12 +561,22 @@ class Dashboard extends Page
                 'status' => $isCompleted ? KhatmaStatus::Completed : KhatmaStatus::Active,
             ]);
 
+            $dailyDoneNow = ! $isCompleted
+                && $plan['today_target_pages'] > 0
+                && $remainingToday > 0
+                && $pagesToRecord >= $remainingToday;
+
             return [
                 'type' => 'success',
                 'message' => $isCompleted
                     ? "ختمة \"{$khatma->name}\" اكتملت بحمد الله"
                     : "تم تسجيل {$pagesCount} صفحات",
                 'title' => $isCompleted ? 'مبارك' : 'تم التسجيل',
+                'send_daily_congrats' => $dailyDoneNow,
+                'send_khatma_congrats' => $isCompleted,
+                'khatma_name' => (string) $khatma->name,
+                'remaining_total_pages' => max((int) $khatma->total_pages - $newCompletedPages, 0),
+                'expected_end_date_label' => $khatma->expected_end_date?->translatedFormat('j F Y'),
             ];
         });
 
@@ -559,6 +588,34 @@ class Dashboard extends Page
             $notification->success()->send();
         } else {
             $notification->warning()->send();
+        }
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return;
+        }
+
+        if ((bool) ($result['send_daily_congrats'] ?? false)) {
+            rescue(function () use ($user, $result): void {
+                $user->notify(new DailyWirdCompletedNotification(
+                    khatmaName: (string) ($result['khatma_name'] ?? 'ختمة'),
+                    remainingTotalPages: (int) ($result['remaining_total_pages'] ?? 0),
+                    expectedEndDateLabel: is_string($result['expected_end_date_label'] ?? null)
+                        ? $result['expected_end_date_label']
+                        : null,
+                    dashboardUrl: url('/app'),
+                ));
+            });
+        }
+
+        if ((bool) ($result['send_khatma_congrats'] ?? false)) {
+            rescue(function () use ($user, $result): void {
+                $user->notify(new KhatmaCompletedNotification(
+                    khatmaName: (string) ($result['khatma_name'] ?? 'ختمة'),
+                    dashboardUrl: url('/app'),
+                ));
+            });
         }
     }
 
@@ -573,7 +630,96 @@ class Dashboard extends Page
             ->sum('pages_count');
     }
 
-    private function calculateTodayPlan(Khatma $khatma, Carbon $today, int $todayCompletedPages): array
+    private function applySmartPlanAdjustments(Khatma $khatma, Carbon $today): array
+    {
+        $dailyCap = SmartKhatmaPlanner::DAILY_PAGES_CAP;
+        $extensionLimit = SmartKhatmaPlanner::EXTENSION_DAYS_LIMIT;
+        $extensionUsed = max((int) ($khatma->smart_extension_days_used ?? 0), 0);
+
+        $default = [
+            'daily_cap' => $dailyCap,
+            'applied_extension_days' => 0,
+            'extension_days_used' => $extensionUsed,
+            'extension_days_remaining' => max($extensionLimit - $extensionUsed, 0),
+            'needs_higher_daily_pages' => false,
+            'suggested_daily_pages' => 0,
+        ];
+
+        if ($khatma->planning_method !== PlanningMethod::ByDuration || ! $khatma->auto_compensate_missed_days) {
+            return $default;
+        }
+
+        if ($khatma->start_date && $today->lt($khatma->start_date->copy()->startOfDay())) {
+            return $default;
+        }
+
+        $remainingPages = max((int) $khatma->total_pages - (int) $khatma->completed_pages, 0);
+
+        if ($remainingPages <= 0) {
+            return $default;
+        }
+
+        $currentEndDate = $khatma->expected_end_date?->copy()->startOfDay();
+        $endDate = $currentEndDate ?? $today->copy();
+
+        if ($endDate->lt($today)) {
+            $endDate = $today->copy();
+        }
+
+        $daysLeft = $this->calculateDaysLeftInclusive($today, $endDate);
+        $resolution = SmartKhatmaPlanner::resolveAutoExtension(
+            $remainingPages,
+            $daysLeft,
+            $extensionUsed,
+            $dailyCap,
+            $extensionLimit,
+        );
+
+        $appliedExtension = (int) $resolution['applied_extension_days'];
+
+        if ($appliedExtension > 0) {
+            $endDate = $endDate->copy()->addDays($appliedExtension);
+        }
+
+        $extensionUsedAfter = (int) $resolution['extension_days_used_after'];
+        $daysLeftAfter = $this->calculateDaysLeftInclusive($today, $endDate);
+        $roundedDaily = SmartKhatmaPlanner::calculateRoundedDailyTarget($remainingPages, $daysLeftAfter);
+
+        $updates = [];
+
+        if ($currentEndDate?->toDateString() !== $endDate->toDateString()) {
+            $updates['expected_end_date'] = $endDate;
+        }
+
+        if ((int) ($khatma->smart_extension_days_used ?? 0) !== $extensionUsedAfter) {
+            $updates['smart_extension_days_used'] = $extensionUsedAfter;
+        }
+
+        if ($roundedDaily > 0 && (int) $khatma->daily_pages !== $roundedDaily) {
+            $updates['daily_pages'] = $roundedDaily;
+        }
+
+        if ($updates !== []) {
+            $khatma->forceFill($updates);
+            $khatma->saveQuietly();
+        }
+
+        return [
+            'daily_cap' => $dailyCap,
+            'applied_extension_days' => $appliedExtension,
+            'extension_days_used' => $extensionUsedAfter,
+            'extension_days_remaining' => max($extensionLimit - $extensionUsedAfter, 0),
+            'needs_higher_daily_pages' => (bool) $resolution['needs_higher_daily_pages'],
+            'suggested_daily_pages' => (int) $resolution['suggested_daily_pages'],
+        ];
+    }
+
+    private function calculateTodayPlan(
+        Khatma $khatma,
+        Carbon $today,
+        int $todayCompletedPages,
+        ?array $smartPlan = null,
+    ): array
     {
         $startDate = $khatma->start_date?->copy()->startOfDay();
         $endDate = $khatma->expected_end_date?->copy()->startOfDay();
@@ -598,9 +744,19 @@ class Dashboard extends Page
         if ($khatma->auto_compensate_missed_days) {
             $daysLeft = $this->calculateDaysLeftInclusive($today, $endDate);
             $remainingBeforeToday = max($totalPages - $completedBeforeToday, 0);
-            $todayTargetPages = $daysLeft > 0
-                ? (int) ceil($remainingBeforeToday / $daysLeft)
-                : $remainingBeforeToday;
+
+            if ($khatma->planning_method === PlanningMethod::ByDuration) {
+                $rawTarget = SmartKhatmaPlanner::calculateRawDailyTarget($remainingBeforeToday, $daysLeft);
+                $todayTargetPages = SmartKhatmaPlanner::roundDailyTarget($rawTarget, $remainingBeforeToday);
+
+                if (($smartPlan['needs_higher_daily_pages'] ?? false) && (int) ($smartPlan['suggested_daily_pages'] ?? 0) > 0) {
+                    $todayTargetPages = (int) $smartPlan['suggested_daily_pages'];
+                }
+            } else {
+                $todayTargetPages = $daysLeft > 0
+                    ? (int) ceil($remainingBeforeToday / $daysLeft)
+                    : $remainingBeforeToday;
+            }
         } else {
             $todayTargetPages = $this->calculateBaseTargetForToday($khatma, $today, $startDate, $endDate);
         }

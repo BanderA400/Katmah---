@@ -76,7 +76,7 @@ Route::middleware('guest')->group(function (): void {
         ->name('control.recovery.show');
 
     Route::post('/control/recovery', [ControlRecoveryController::class, 'store'])
-        ->middleware('throttle:6,1')
+        ->middleware('throttle:3,15')
         ->name('control.recovery.store');
 });
 

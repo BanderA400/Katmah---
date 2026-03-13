@@ -12,10 +12,10 @@ use Illuminate\View\View;
 
 class ControlRecoveryController extends Controller
 {
-    public function show(): View
+    public function show(Request $request): View
     {
         $config = $this->getRecoveryConfig();
-        $this->ensureRecoveryIsEnabled($config);
+        $this->ensureRecoveryIsEnabled($config, $request);
 
         return view('auth.control-recovery', [
             'recoveryEmail' => (string) $config['email'],
@@ -25,7 +25,7 @@ class ControlRecoveryController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $config = $this->getRecoveryConfig();
-        $this->ensureRecoveryIsEnabled($config);
+        $this->ensureRecoveryIsEnabled($config, $request);
 
         $validated = $request->validate([
             'email' => ['required', 'email'],
@@ -86,12 +86,23 @@ class ControlRecoveryController extends Controller
         return (array) config('security.control_recovery', []);
     }
 
-    private function ensureRecoveryIsEnabled(array $config): void
+    private function ensureRecoveryIsEnabled(array $config, ?Request $request = null): void
     {
         $enabled = (bool) ($config['enabled'] ?? false);
         $hasEmail = filled((string) ($config['email'] ?? ''));
         $hasToken = filled((string) ($config['token'] ?? ''));
 
-        abort_unless($enabled && $hasEmail && $hasToken, 404);
+        if (! $enabled || ! $hasEmail || ! $hasToken) {
+            abort(404);
+        }
+
+        $allowedIps = array_values(array_filter(array_map(
+            static fn (mixed $value): string => trim((string) $value),
+            (array) ($config['allowed_ips'] ?? []),
+        )));
+
+        if ($request && $allowedIps !== []) {
+            abort_unless(in_array((string) $request->ip(), $allowedIps, true), 404);
+        }
     }
 }

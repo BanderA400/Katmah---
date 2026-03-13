@@ -223,6 +223,23 @@
                             </div>
                         @endif
 
+                        @if($wird['smart_extension_applied_days'] > 0)
+                            <div style="margin-bottom: 0.85rem; padding: 0.45rem 0.65rem; border-radius: 10px; background: var(--khatma-success-soft-bg); color: var(--khatma-success-soft-text); font-size: 0.76rem;">
+                                تم تمديد الخطة تلقائيًا {{ $wird['smart_extension_applied_days'] }} يوم لتخفيف الورد اليومي.
+                            </div>
+                        @endif
+
+                        @if($wird['smart_needs_higher_daily_pages'])
+                            <div style="margin-bottom: 0.85rem; padding: 0.52rem 0.65rem; border-radius: 10px; background: var(--khatma-warning-soft-bg); color: var(--khatma-warning-soft-text); font-size: 0.76rem; border: 1px solid rgba(245, 158, 11, 0.35);">
+                                للوصول في الموعد الحالي: الورد المقترح {{ $wird['smart_suggested_daily_pages'] }} صفحة يوميًا.
+                                @if($wird['smart_extension_remaining_days'] === 0)
+                                    تم استهلاك كامل التمديد الذكي (7 أيام).
+                                @else
+                                    التمديد المتبقي: {{ $wird['smart_extension_remaining_days'] }} يوم.
+                                @endif
+                            </div>
+                        @endif
+
                         {{-- شريط التقدم --}}
                         <div style="margin-bottom: 0.5rem;">
                             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--khatma-muted); margin-bottom: 0.3rem;">

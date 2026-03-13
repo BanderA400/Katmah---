@@ -72,4 +72,35 @@ class ControlRecoveryTest extends TestCase
             'is_admin' => true,
         ]);
     }
+
+    public function test_recovery_cannot_create_admin_when_create_if_missing_is_disabled(): void
+    {
+        config()->set('security.control_recovery.enabled', true);
+        config()->set('security.control_recovery.email', 'admin3@example.com');
+        config()->set('security.control_recovery.token', 'secret-token-3');
+        config()->set('security.control_recovery.create_if_missing', false);
+
+        $response = $this->post('/control/recovery', [
+            'email' => 'admin3@example.com',
+            'token' => 'secret-token-3',
+            'password' => 'AnotherSecurePass123',
+            'password_confirmation' => 'AnotherSecurePass123',
+        ]);
+
+        $response->assertSessionHasErrors(['email']);
+        $this->assertDatabaseMissing('users', [
+            'email' => 'admin3@example.com',
+        ]);
+    }
+
+    public function test_recovery_route_is_hidden_when_request_ip_is_not_allowed(): void
+    {
+        config()->set('security.control_recovery.enabled', true);
+        config()->set('security.control_recovery.email', 'admin@example.com');
+        config()->set('security.control_recovery.token', 'secret-token');
+        config()->set('security.control_recovery.allowed_ips', ['203.0.113.10']);
+
+        $this->get('/control/recovery')->assertNotFound();
+        $this->post('/control/recovery', [])->assertNotFound();
+    }
 }

@@ -11,6 +11,7 @@ use App\Filament\Resources\KhatmaResource\Pages;
 use App\Models\Khatma;
 use App\Models\Surah;
 use App\Support\AppSettings;
+use App\Support\SmartKhatmaPlanner;
 use Carbon\Carbon;
 use Filament\Notifications\Notification;
 use Filament\Forms;
@@ -77,26 +78,26 @@ class KhatmaResource extends Resource
                                         ->native(false)
                                         ->live()
                                         ->afterStateUpdated(function ($get, $set): void {
-                                            static::applyTemplatePreset($get, $set);
+                                            static::applyTemplatePreset($get, $set, false);
                                             static::recalculate($get, $set);
                                         }),
 
                                     Forms\Components\Select::make('template_days')
                                         ->label('قالب سريع')
                                         ->options([
-                                            'manual' => 'يدوي',
+                                            'manual' => 'تخصيص يدوي',
+                                            '10' => 'ختمة 10 أيام',
+                                            '20' => 'ختمة 20 يوم',
                                             '30' => 'ختمة 30 يوم',
-                                            '60' => 'ختمة 60 يوم',
-                                            '90' => 'ختمة 90 يوم',
                                         ])
-                                        ->default('manual')
+                                        ->default('30')
                                         ->dehydrated(false)
                                         ->native(false)
                                         ->live()
-                                        ->helperText('اختيار قالب يضبط طريقة التخطيط إلى "بالمدة" تلقائيًا.')
+                                        ->helperText('القالب يضبط التخطيط بالمدة تلقائيًا؛ يمكنك التعديل يدويًا لاحقًا.')
                                         ->visibleOn('create')
                                         ->afterStateUpdated(function ($get, $set): void {
-                                            static::applyTemplatePreset($get, $set);
+                                            static::applyTemplatePreset($get, $set, true);
                                             static::recalculate($get, $set);
                                         }),
                                 ])
@@ -226,7 +227,7 @@ class KhatmaResource extends Resource
                                     Forms\Components\Select::make('planning_method')
                                         ->label('طريقة التخطيط')
                                         ->options(PlanningMethod::class)
-                                        ->default(PlanningMethod::ByWird->value)
+                                        ->default(PlanningMethod::ByDuration->value)
                                         ->required()
                                         ->native(false)
                                         ->live()
@@ -235,17 +236,71 @@ class KhatmaResource extends Resource
                                                 $set('daily_pages', null);
                                             } else {
                                                 $set('expected_end_date', null);
+                                                $set('daily_pages', static::defaultDailyPagesForUser());
                                             }
                                         }),
 
                                     Forms\Components\Toggle::make('auto_compensate_missed_days')
                                         ->label('تعويض تلقائي عند فوات الأيام')
-                                        ->helperText('عند التفعيل: يعاد توزيع المتبقي تلقائيًا على الأيام القادمة.')
+                                        ->helperText('الخطة الذكية: تعويض تلقائي + تمديد حتى 7 أيام عند الحاجة.')
                                         ->default(fn (): bool => static::defaultCompensationForUser())
                                         ->inline(false),
 
+                                    Forms\Components\Toggle::make('use_custom_reminder_settings')
+                                        ->label('إعداد تذكير خاص لهذه الختمة')
+                                        ->helperText('عند التفعيل، تتجاوز هذه الختمة إعدادات التذكير العامة في الحساب.')
+                                        ->default(false)
+                                        ->inline(false)
+                                        ->live()
+                                        ->afterStateUpdated(function ($set, $state): void {
+                                            $useCustom = (bool) static::stateValue($state);
+
+                                            if (! $useCustom) {
+                                                $set('reminder_enabled', null);
+                                                $set('reminder_time', null);
+
+                                                return;
+                                            }
+
+                                            $set('reminder_enabled', true);
+                                            $set('reminder_time', static::defaultReminderTimeForUser());
+                                        }),
+
+                                    Forms\Components\Toggle::make('reminder_enabled')
+                                        ->label('تفعيل تذكير هذه الختمة')
+                                        ->default(true)
+                                        ->inline(false)
+                                        ->visible(fn ($get): bool => (bool) static::stateValue($get('use_custom_reminder_settings')))
+                                        ->live()
+                                        ->afterStateUpdated(function ($get, $set, $state): void {
+                                            if (! (bool) static::stateValue($state)) {
+                                                $set('reminder_time', null);
+
+                                                return;
+                                            }
+
+                                            if (blank($get('reminder_time'))) {
+                                                $set('reminder_time', static::defaultReminderTimeForUser());
+                                            }
+                                        }),
+
+                                    Forms\Components\TextInput::make('reminder_time')
+                                        ->label('وقت تذكير هذه الختمة')
+                                        ->type('time')
+                                        ->formatStateUsing(fn ($state) => is_string($state) ? mb_substr($state, 0, 5) : $state)
+                                        ->required(fn ($get): bool =>
+                                            (bool) static::stateValue($get('use_custom_reminder_settings'))
+                                            && (bool) static::stateValue($get('reminder_enabled'))
+                                        )
+                                        ->visible(fn ($get): bool =>
+                                            (bool) static::stateValue($get('use_custom_reminder_settings'))
+                                            && (bool) static::stateValue($get('reminder_enabled'))
+                                        )
+                                        ->helperText('الصيغة 24 ساعة، مثال: 20:00'),
+
                                     Forms\Components\DatePicker::make('expected_end_date')
                                         ->label('تاريخ الختم المتوقع')
+                                        ->default(now()->addDays(29))
                                         ->native(false)
                                         ->minDate(fn ($get) => $get('start_date'))
                                         ->required(fn ($get) => static::stateValue($get('planning_method')) === PlanningMethod::ByDuration->value)
@@ -264,7 +319,7 @@ class KhatmaResource extends Resource
                                                 $days = static::calculateInclusiveDays($startDate, $endDate);
 
                                                 if ($days !== null) {
-                                                    $set('daily_pages', (int) ceil($totalPages / $days));
+                                                    $set('daily_pages', SmartKhatmaPlanner::calculateRoundedDailyTarget($totalPages, $days));
                                                 }
                                             }
                                         }),
@@ -435,16 +490,43 @@ class KhatmaResource extends Resource
                             }
 
                             $daysLeft = $today->diffInDays($endDate) + 1;
-                            $newDailyPages = max((int) ceil($remainingPages / max($daysLeft, 1)), 1);
+                            $resolution = SmartKhatmaPlanner::resolveAutoExtension(
+                                $remainingPages,
+                                $daysLeft,
+                                (int) ($record->smart_extension_days_used ?? 0),
+                            );
+
+                            $appliedExtension = (int) $resolution['applied_extension_days'];
+                            if ($appliedExtension > 0) {
+                                $endDate = $endDate->copy()->addDays($appliedExtension);
+                                $daysLeft += $appliedExtension;
+                            }
+
+                            $newDailyPages = SmartKhatmaPlanner::calculateRoundedDailyTarget($remainingPages, $daysLeft);
 
                             $record->update([
                                 'daily_pages' => $newDailyPages,
                                 'expected_end_date' => $endDate,
+                                'smart_extension_days_used' => (int) $resolution['extension_days_used_after'],
                             ]);
+
+                            if ((bool) $resolution['needs_higher_daily_pages']) {
+                                Notification::make()
+                                    ->title('يلزم رفع الورد')
+                                    ->body("تم استهلاك التمديد المتاح. المقترح الآن {$resolution['suggested_daily_pages']} صفحة يوميًا.")
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
+                            $extensionText = $appliedExtension > 0
+                                ? " بعد تمديد {$appliedExtension} يوم."
+                                : '.';
 
                             Notification::make()
                                 ->title('تمت إعادة الموازنة')
-                                ->body("المتبقي {$remainingPages} صفحة على {$daysLeft} يوم.")
+                                ->body("المتبقي {$remainingPages} صفحة على {$daysLeft} يوم{$extensionText}")
                                 ->success()
                                 ->send();
 
@@ -565,7 +647,7 @@ class KhatmaResource extends Resource
             $days = static::calculateInclusiveDays($startDate, $endDate);
 
             if ($days !== null) {
-                $set('daily_pages', (int) ceil($totalPages / $days));
+                $set('daily_pages', SmartKhatmaPlanner::calculateRoundedDailyTarget($totalPages, $days));
             }
         } elseif ($method === PlanningMethod::ByWird->value) {
             $dailyPages = (int) $get('daily_pages');
@@ -600,30 +682,38 @@ class KhatmaResource extends Resource
             return null;
         }
 
-        $average = $totalPages / $days;
-        $minPages = (int) floor($average);
-        $maxPages = (int) ceil($average);
+        $rawDaily = SmartKhatmaPlanner::calculateRawDailyTarget($totalPages, $days);
+        $roundedDaily = SmartKhatmaPlanner::calculateRoundedDailyTarget($totalPages, $days);
+        $cap = SmartKhatmaPlanner::DAILY_PAGES_CAP;
 
-        if ($minPages === $maxPages) {
-            return "{$maxPages} صفحة يوميًا";
+        if ($rawDaily > $cap) {
+            return "{$roundedDaily} صفحة يوميًا تقريبًا (يتجاوز {$cap} صفحة)";
         }
 
-        $averageLabel = rtrim(rtrim(number_format($average, 1), '0'), '.');
-
-        return "متغير {$minPages}–{$maxPages} صفحة (متوسط {$averageLabel})";
+        return "{$roundedDaily} صفحة يوميًا تقريبًا";
     }
 
-    protected static function applyTemplatePreset($get, $set): void
+    protected static function applyTemplatePreset($get, $set, bool $force): void
     {
         $templateDaysState = $get('template_days');
 
-        if (! is_string($templateDaysState) || ! ctype_digit($templateDaysState)) {
+        $templateDays = null;
+
+        if (is_int($templateDaysState)) {
+            $templateDays = $templateDaysState;
+        } elseif (is_string($templateDaysState) && ctype_digit($templateDaysState)) {
+            $templateDays = (int) $templateDaysState;
+        }
+
+        if (! is_int($templateDays)) {
             return;
         }
 
-        $templateDays = (int) $templateDaysState;
-
         if ($templateDays <= 0) {
+            return;
+        }
+
+        if (! $force && static::stateValue($get('planning_method')) !== PlanningMethod::ByDuration->value) {
             return;
         }
 
@@ -648,7 +738,7 @@ class KhatmaResource extends Resource
 
         return (bool) AppSettings::get(
             AppSettings::KEY_GLOBAL_DEFAULT_AUTO_COMPENSATE,
-            false,
+            true,
         );
     }
 
@@ -661,6 +751,13 @@ class KhatmaResource extends Resource
             : (int) AppSettings::get(AppSettings::KEY_GLOBAL_DEFAULT_DAILY_PAGES, 5);
 
         return max(min($value, 604), 1);
+    }
+
+    protected static function defaultReminderTimeForUser(): string
+    {
+        $time = (string) (auth()->user()?->wird_reminders_time ?? '20:00:00');
+
+        return mb_substr($time, 0, 5);
     }
 
     protected static function resolveCurrentPageFromDirection(mixed $direction, int $startPage, int $endPage): int

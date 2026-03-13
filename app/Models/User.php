@@ -22,6 +22,10 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmailContr
         'password',
         'default_auto_compensate_missed_days',
         'default_daily_pages',
+        'wird_reminders_enabled',
+        'wird_reminders_time',
+        'weekly_reports_enabled',
+        'monthly_reports_enabled',
         'is_admin',
     ];
 
@@ -58,6 +62,10 @@ class User extends Authenticatable implements FilamentUser, MustVerifyEmailContr
             'password' => 'hashed',
             'default_auto_compensate_missed_days' => 'boolean',
             'default_daily_pages' => 'integer',
+            'wird_reminders_enabled' => 'boolean',
+            'wird_reminders_time' => 'string',
+            'weekly_reports_enabled' => 'boolean',
+            'monthly_reports_enabled' => 'boolean',
             'is_admin' => 'boolean',
         ];
     }

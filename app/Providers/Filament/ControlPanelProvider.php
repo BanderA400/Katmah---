@@ -27,6 +27,8 @@ class ControlPanelProvider extends PanelProvider
             ->login()
             ->passwordReset()
             ->emailVerification(isRequired: true)
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
             ->viteTheme('resources/css/filament/admin/theme.css')
             ->renderHook(
                 PanelsRenderHook::AUTH_PASSWORD_RESET_REQUEST_FORM_AFTER,

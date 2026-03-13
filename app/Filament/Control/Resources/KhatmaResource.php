@@ -7,6 +7,7 @@ use App\Enums\KhatmaType;
 use App\Enums\PlanningMethod;
 use App\Filament\Control\Resources\KhatmaResource\Pages;
 use App\Models\Khatma;
+use App\Support\SmartKhatmaPlanner;
 use Carbon\Carbon;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -228,16 +229,43 @@ class KhatmaResource extends Resource
                             }
 
                             $daysLeft = $today->diffInDays($endDate) + 1;
-                            $newDailyPages = max((int) ceil($remainingPages / max($daysLeft, 1)), 1);
+                            $resolution = SmartKhatmaPlanner::resolveAutoExtension(
+                                $remainingPages,
+                                $daysLeft,
+                                (int) ($record->smart_extension_days_used ?? 0),
+                            );
+
+                            $appliedExtension = (int) $resolution['applied_extension_days'];
+                            if ($appliedExtension > 0) {
+                                $endDate = $endDate->copy()->addDays($appliedExtension);
+                                $daysLeft += $appliedExtension;
+                            }
+
+                            $newDailyPages = SmartKhatmaPlanner::calculateRoundedDailyTarget($remainingPages, $daysLeft);
 
                             $record->update([
                                 'daily_pages' => $newDailyPages,
                                 'expected_end_date' => $endDate,
+                                'smart_extension_days_used' => (int) $resolution['extension_days_used_after'],
                             ]);
+
+                            if ((bool) $resolution['needs_higher_daily_pages']) {
+                                Notification::make()
+                                    ->title('يلزم رفع الورد')
+                                    ->body("تم استهلاك التمديد المتاح. المقترح {$resolution['suggested_daily_pages']} صفحة يوميًا.")
+                                    ->warning()
+                                    ->send();
+
+                                return;
+                            }
+
+                            $extensionText = $appliedExtension > 0
+                                ? " بعد تمديد {$appliedExtension} يوم."
+                                : '.';
 
                             Notification::make()
                                 ->title('تمت إعادة الموازنة')
-                                ->body("المتبقي {$remainingPages} صفحة على {$daysLeft} يوم.")
+                                ->body("المتبقي {$remainingPages} صفحة على {$daysLeft} يوم{$extensionText}")
                                 ->success()
                                 ->send();
 

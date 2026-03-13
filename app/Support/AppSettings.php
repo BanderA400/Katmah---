@@ -18,7 +18,7 @@ class AppSettings
 
     public const DEFAULTS = [
         self::KEY_GLOBAL_DEFAULT_DAILY_PAGES => 5,
-        self::KEY_GLOBAL_DEFAULT_AUTO_COMPENSATE => false,
+        self::KEY_GLOBAL_DEFAULT_AUTO_COMPENSATE => true,
         self::KEY_CONTROL_DASHBOARD_ACTIVITY_LIMIT => 12,
         self::KEY_HISTORY_DEFAULT_RECORDS_VIEW => '30_days',
         self::KEY_LANDING_CONTACT_EMAIL => 'contact@khatma.app',
