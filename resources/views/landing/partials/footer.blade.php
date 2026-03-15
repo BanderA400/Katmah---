@@ -1,6 +1,6 @@
 @php
-    $contactEmail = trim((string) ($landingContactEmail ?? 'contact@khatma.app'));
-    $xUrl = trim((string) ($landingXUrl ?? 'https://x.com/khatma_app'));
+    $contactEmail = trim((string) ($landingContactEmail ?? ''));
+    $xUrl = trim((string) ($landingXUrl ?? ''));
     $showVisitCounter = (bool) ($landingShowVisitCounter ?? true);
     $xPath = (string) (parse_url($xUrl, PHP_URL_PATH) ?? '');
     $xHandle = $xPath !== '' ? '@' . ltrim($xPath, '/@') : '@khatma_app';

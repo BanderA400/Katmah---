@@ -15,8 +15,8 @@ Route::get('/', function (Request $request) {
     $totalVisits = 0;
     $todayUniqueVisitors = 0;
     $landingSettings = AppSettings::getMany([
-        AppSettings::KEY_LANDING_CONTACT_EMAIL => 'contact@khatma.app',
-        AppSettings::KEY_LANDING_X_URL => 'https://x.com/khatma_app',
+        AppSettings::KEY_LANDING_CONTACT_EMAIL => null,
+        AppSettings::KEY_LANDING_X_URL => null,
         AppSettings::KEY_LANDING_SHOW_VISIT_COUNTER => true,
     ]);
     $landingContactEmail = $landingSettings[AppSettings::KEY_LANDING_CONTACT_EMAIL] ?? null;
